@@ -217,7 +217,14 @@ func (h *AgentHandler) MultiAgentLoopStream(c *gin.Context) {
 			h.tasks.UpdateTaskStatus(conversationID, taskStatus)
 			cancelMsg := "任务已被用户取消，后续操作已停止。"
 			if assistantMessageID != "" {
-				_, _ = h.db.Exec("UPDATE messages SET content = ?, updated_at = ? WHERE id = ?", cancelMsg, time.Now(), assistantMessageID)
+				if result != nil {
+					if err := h.mergeAssistantMessagePartialOnCancel(assistantMessageID, result.Response); err != nil {
+						h.logger.Warn("合并取消前的部分回复失败", zap.Error(err))
+					}
+				}
+				if err := h.appendAssistantMessageNotice(assistantMessageID, cancelMsg); err != nil {
+					h.logger.Warn("更新取消后的助手消息失败", zap.Error(err))
+				}
 				_ = h.db.AddProcessDetail(assistantMessageID, conversationID, "cancelled", cancelMsg, nil)
 			}
 			sendEvent("cancelled", cancelMsg, map[string]interface{}{

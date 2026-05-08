@@ -459,6 +459,57 @@ func appendAttachmentsToMessage(msg string, attachments []ChatAttachment, savedP
 	return b.String()
 }
 
+// appendAssistantMessageNotice 在助手消息末尾追加提示，避免覆盖已生成内容。
+// 若消息为空则直接写入提示；若已包含相同提示则保持不变。
+func (h *AgentHandler) appendAssistantMessageNotice(messageID, notice string) error {
+	trimmedNotice := strings.TrimSpace(notice)
+	if strings.TrimSpace(messageID) == "" || trimmedNotice == "" {
+		return nil
+	}
+	_, err := h.db.Exec(
+		`UPDATE messages
+		 SET content = CASE
+			WHEN content IS NULL OR TRIM(content) = '' THEN ?
+			WHEN INSTR(content, ?) > 0 THEN content
+			ELSE content || '\n\n' || ?
+		 END,
+		     updated_at = ?
+		 WHERE id = ?`,
+		trimmedNotice,
+		trimmedNotice,
+		trimmedNotice,
+		time.Now(),
+		messageID,
+	)
+	return err
+}
+
+// mergeAssistantMessagePartialOnCancel 将取消前已生成的部分回复尽量合并进消息：
+// - content 为空或仅占位（处理中...）时，直接替换为 partial；
+// - 已有正文时，仅在尚未包含 partial 时追加，避免丢失与重复。
+func (h *AgentHandler) mergeAssistantMessagePartialOnCancel(messageID, partial string) error {
+	trimmedPartial := strings.TrimSpace(partial)
+	if strings.TrimSpace(messageID) == "" || trimmedPartial == "" {
+		return nil
+	}
+	_, err := h.db.Exec(
+		`UPDATE messages
+		 SET content = CASE
+			WHEN content IS NULL OR TRIM(content) = '' OR TRIM(content) = '处理中...' THEN ?
+			WHEN INSTR(content, ?) > 0 THEN content
+			ELSE content || '\n\n' || ?
+		 END,
+		     updated_at = ?
+		 WHERE id = ?`,
+		trimmedPartial,
+		trimmedPartial,
+		trimmedPartial,
+		time.Now(),
+		messageID,
+	)
+	return err
+}
+
 // ChatResponse 聊天响应
 type ChatResponse struct {
 	Response        string    `json:"response"`
@@ -1573,11 +1624,12 @@ func (h *AgentHandler) AgentLoopStream(c *gin.Context) {
 			h.tasks.UpdateTaskStatus(conversationID, taskStatus)
 
 			if assistantMessageID != "" {
-				if _, updateErr := h.db.Exec(
-					"UPDATE messages SET content = ?, updated_at = ? WHERE id = ?",
-					cancelMsg,
-					time.Now(), assistantMessageID,
-				); updateErr != nil {
+				if result != nil {
+					if updateErr := h.mergeAssistantMessagePartialOnCancel(assistantMessageID, result.Response); updateErr != nil {
+						h.logger.Warn("合并取消前的部分回复失败", zap.Error(updateErr))
+					}
+				}
+				if updateErr := h.appendAssistantMessageNotice(assistantMessageID, cancelMsg); updateErr != nil {
 					h.logger.Warn("更新取消后的助手消息失败", zap.Error(updateErr))
 				}
 				h.db.AddProcessDetail(assistantMessageID, conversationID, "cancelled", cancelMsg, nil)
@@ -2638,11 +2690,7 @@ func (h *AgentHandler) executeBatchQueue(queueID string) {
 				}
 				// 更新助手消息内容
 				if assistantMessageID != "" {
-					if _, updateErr := h.db.Exec(
-						"UPDATE messages SET content = ?, updated_at = ? WHERE id = ?",
-						cancelMsg,
-						time.Now(), assistantMessageID,
-					); updateErr != nil {
+					if updateErr := h.appendAssistantMessageNotice(assistantMessageID, cancelMsg); updateErr != nil {
 						h.logger.Warn("更新取消后的助手消息失败", zap.String("queueId", queueID), zap.String("taskId", task.ID), zap.Error(updateErr))
 					}
 					// 保存取消详情到数据库
