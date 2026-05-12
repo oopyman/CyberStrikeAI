@@ -609,15 +609,46 @@ func (h *ConfigHandler) GetTools(c *gin.Context) {
 
 // UpdateConfigRequest 更新配置请求
 type UpdateConfigRequest struct {
-	OpenAI     *config.OpenAIConfig        `json:"openai,omitempty"`
-	FOFA       *config.FofaConfig          `json:"fofa,omitempty"`
-	MCP        *config.MCPConfig           `json:"mcp,omitempty"`
-	Tools      []ToolEnableStatus          `json:"tools,omitempty"`
-	Agent      *config.AgentConfig         `json:"agent,omitempty"`
-	Knowledge  *config.KnowledgeConfig     `json:"knowledge,omitempty"`
-	Robots     *config.RobotsConfig        `json:"robots,omitempty"`
-	MultiAgent *config.MultiAgentAPIUpdate `json:"multi_agent,omitempty"`
-	C2         *config.C2APIUpdate          `json:"c2,omitempty"`
+	OpenAI     *config.OpenAIConfig         `json:"openai,omitempty"`
+	FOFA       *config.FofaConfig           `json:"fofa,omitempty"`
+	MCP        *config.MCPConfig            `json:"mcp,omitempty"`
+	Tools      []ToolEnableStatus           `json:"tools,omitempty"`
+	Agent      *AgentConfigUpdate           `json:"agent,omitempty"`
+	Knowledge  *config.KnowledgeConfig      `json:"knowledge,omitempty"`
+	Robots     *config.RobotsConfig         `json:"robots,omitempty"`
+	MultiAgent *config.MultiAgentAPIUpdate  `json:"multi_agent,omitempty"`
+	C2         *config.C2APIUpdate           `json:"c2,omitempty"`
+}
+
+// AgentConfigUpdate 用于 PATCH /api/config 的 agent 段：仅 JSON 中出现的字段（指针非 nil）覆盖内存配置。
+// 避免旧版「整包替换 *AgentConfig」时，未传的整型字段被反序列化为 0 误覆盖（例如 tool_timeout_minutes 变成 0）。
+type AgentConfigUpdate struct {
+	MaxIterations        *int    `json:"max_iterations,omitempty"`
+	LargeResultThreshold *int    `json:"large_result_threshold,omitempty"`
+	ResultStorageDir     *string `json:"result_storage_dir,omitempty"`
+	ToolTimeoutMinutes   *int    `json:"tool_timeout_minutes,omitempty"`
+	SystemPromptPath     *string `json:"system_prompt_path,omitempty"`
+}
+
+func applyAgentConfigUpdate(dst *config.AgentConfig, src *AgentConfigUpdate) {
+	if dst == nil || src == nil {
+		return
+	}
+	if src.MaxIterations != nil {
+		dst.MaxIterations = *src.MaxIterations
+	}
+	if src.LargeResultThreshold != nil {
+		dst.LargeResultThreshold = *src.LargeResultThreshold
+	}
+	if src.ResultStorageDir != nil {
+		dst.ResultStorageDir = *src.ResultStorageDir
+	}
+	if src.ToolTimeoutMinutes != nil {
+		dst.ToolTimeoutMinutes = *src.ToolTimeoutMinutes
+	}
+	if src.SystemPromptPath != nil {
+		dst.SystemPromptPath = *src.SystemPromptPath
+	}
 }
 
 // ToolEnableStatus 工具启用状态
@@ -664,12 +695,19 @@ func (h *ConfigHandler) UpdateConfig(c *gin.Context) {
 		)
 	}
 
-	// 更新Agent配置
+	// 更新Agent配置（按字段合并，避免部分 JSON 把未出现的字段写成 0）
 	if req.Agent != nil {
-		h.config.Agent = *req.Agent
+		applyAgentConfigUpdate(&h.config.Agent, req.Agent)
 		h.logger.Info("更新Agent配置",
 			zap.Int("max_iterations", h.config.Agent.MaxIterations),
+			zap.Int("tool_timeout_minutes", h.config.Agent.ToolTimeoutMinutes),
 		)
+		if h.agent != nil && req.Agent.MaxIterations != nil {
+			h.agent.UpdateMaxIterations(h.config.Agent.MaxIterations)
+		}
+		if h.mcpServer != nil {
+			h.mcpServer.ConfigureHTTPToolCallTimeoutFromAgentMinutes(h.config.Agent.ToolTimeoutMinutes)
+		}
 	}
 
 	// 更新Knowledge配置
@@ -1116,6 +1154,9 @@ func (h *ConfigHandler) ApplyConfig(c *gin.Context) {
 		h.agent.UpdateToolDescriptionMode(h.config.Security.ToolDescriptionMode)
 		h.logger.Info("Agent配置已更新")
 	}
+	if h.mcpServer != nil {
+		h.mcpServer.ConfigureHTTPToolCallTimeoutFromAgentMinutes(h.config.Agent.ToolTimeoutMinutes)
+	}
 
 	// 更新AttackChainHandler的OpenAI配置
 	if h.attackChainHandler != nil {
@@ -1181,7 +1222,7 @@ func (h *ConfigHandler) saveConfig() error {
 		return fmt.Errorf("解析配置文件失败: %w", err)
 	}
 
-	updateAgentConfig(root, h.config.Agent.MaxIterations)
+	updateAgentConfig(root, h.config.Agent)
 	updateMCPConfig(root, h.config.MCP)
 	updateOpenAIConfig(root, h.config.OpenAI)
 	updateFOFAConfig(root, h.config.FOFA)
@@ -1286,10 +1327,14 @@ func writeYAMLDocument(path string, doc *yaml.Node) error {
 	return os.WriteFile(path, buf.Bytes(), 0644)
 }
 
-func updateAgentConfig(doc *yaml.Node, maxIterations int) {
+func updateAgentConfig(doc *yaml.Node, agent config.AgentConfig) {
 	root := doc.Content[0]
 	agentNode := ensureMap(root, "agent")
-	setIntInMap(agentNode, "max_iterations", maxIterations)
+	setIntInMap(agentNode, "max_iterations", agent.MaxIterations)
+	setIntInMap(agentNode, "tool_timeout_minutes", agent.ToolTimeoutMinutes)
+	setIntInMap(agentNode, "large_result_threshold", agent.LargeResultThreshold)
+	setStringInMap(agentNode, "result_storage_dir", agent.ResultStorageDir)
+	setStringInMap(agentNode, "system_prompt_path", agent.SystemPromptPath)
 }
 
 func updateMCPConfig(doc *yaml.Node, cfg config.MCPConfig) {
