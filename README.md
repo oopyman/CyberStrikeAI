@@ -211,7 +211,7 @@ go build -o cyberstrike-ai cmd/server/main.go
 
 **CyberStrikeAI one-click upgrade (recommended):**
 1. (First time) enable the script: `chmod +x upgrade.sh`
-2. Upgrade with: `./upgrade.sh` (optional flags: `--tag vX.Y.Z`, `--no-venv`, `--preserve-custom`, `--yes`)
+2. Upgrade with: `./upgrade.sh` (optional flags: `--tag vX.Y.Z`, `--no-venv`, `--yes`). Local `tools/`, `roles/`, and `skills/` are always preserved.
 3. The script will back up your `config.yaml` and `data/`, upgrade the code from GitHub Release, update `config.yaml`'s `version`, then restart the server.
 
 Recommended one-liner:

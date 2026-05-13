@@ -726,8 +726,8 @@ function renderDashboardAlertBanner(stats) {
     try { sessionStorage.setItem(DASH_SESSION_ALERT_LAST_REASONS, reasonPartJoined); } catch (_) {}
 }
 
-// External MCP 健康度：从 /api/external-mcp/stats 解析出 running / total / down，
-// 决定是否在「能力总览」第 6 行显示，并把 down 数返回给 alert banner 驱动告警。
+// External MCP 健康度：从 /api/external-mcp/stats 解析（后端字段为 total/enabled/disabled/connected），
+// 决定是否在「能力总览」第 6 行显示，并把「已启用但未连接」的数量返回给 alert banner。
 function renderExternalMcpHealth(stats) {
     var row = document.getElementById('dashboard-resource-external-mcp-row');
     var textEl = document.getElementById('dashboard-resource-external-mcp-text');
@@ -738,22 +738,29 @@ function renderExternalMcpHealth(stats) {
         row.hidden = true;
         return 0;
     }
-    // 兼容多种返回字段：{ total, running, stopped/error }；常见命名都尝试一下
     var total = Number(stats.total ?? stats.Total ?? 0) || 0;
-    var running = Number(stats.running ?? stats.Running ?? 0) || 0;
+    var enabled = Number(stats.enabled ?? stats.Enabled ?? 0) || 0;
+    // 后端用 connected 表示已连接数；兼容旧字段 running
+    var connected = Number(stats.connected ?? stats.Connected ??
+        stats.running ?? stats.Running ?? 0) || 0;
     if (total === 0) {
         row.hidden = true;
         return 0;
     }
-    var down = Math.max(0, total - running);
+    // 未配置任何「已启用」的外部 MCP 时不展示健康行，也不告警（与 MCP 管理页口径一致）
+    if (enabled === 0) {
+        row.hidden = true;
+        return 0;
+    }
+    var down = Math.max(0, enabled - connected);
     row.hidden = false;
-    textEl.textContent = formatNumber(running) + ' / ' + formatNumber(total);
+    textEl.textContent = formatNumber(connected) + ' / ' + formatNumber(enabled);
     if (healthEl) {
         healthEl.classList.remove('is-ok', 'is-warning', 'is-danger');
         if (down === 0) {
             healthEl.classList.add('is-ok');
             healthEl.textContent = dt('dashboard.mcpAllRunning', null, '全部运行');
-        } else if (down < total) {
+        } else if (down < enabled) {
             healthEl.classList.add('is-warning');
             healthEl.textContent = dt('dashboard.mcpPartialDown', { count: down },
                 down + ' 个未运行');

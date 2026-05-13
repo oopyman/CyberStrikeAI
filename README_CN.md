@@ -209,7 +209,7 @@ go build -o cyberstrike-ai cmd/server/main.go
 ### CyberStrikeAI 版本更新（无兼容性问题）
 
 1. （首次使用）启用脚本：`chmod +x upgrade.sh`
-2. 一键升级：`./upgrade.sh`（可选参数：`--tag vX.Y.Z`、`--no-venv`、`--preserve-custom`、`--yes`）
+2. 一键升级：`./upgrade.sh`（可选参数：`--tag vX.Y.Z`、`--no-venv`、`--yes`）。本地的 `tools/`、`roles/`、`skills/` 会始终保留不被覆盖。
 3. 脚本会备份你的 `config.yaml` 和 `data/`，从 GitHub Release 升级代码，更新 `config.yaml` 的 `version` 字段后重启服务。
 
 推荐的一键指令：
