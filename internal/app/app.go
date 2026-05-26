@@ -1084,6 +1084,7 @@ func setupRoutes(
 		protected.PUT("/projects/:id/facts/:factId", projectHandler.UpdateFact)
 		protected.DELETE("/projects/:id/facts/:factId", projectHandler.DeleteFact)
 		protected.POST("/projects/:id/facts/deprecate", projectHandler.DeprecateFact)
+		protected.POST("/projects/:id/facts/restore", projectHandler.RestoreFact)
 
 		// WebShell 管理（代理执行 + 连接配置存 SQLite）
 		protected.GET("/webshell/connections", webshellHandler.ListConnections)

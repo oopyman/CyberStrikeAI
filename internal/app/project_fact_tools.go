@@ -72,7 +72,8 @@ func registerProjectFactTools(mcpServer *mcp.Server, db *database.DB, cfg *confi
 				"body": map[string]interface{}{
 					"type": "string",
 					"description": "完整可复现详情（仅 get_project_fact 返回）：须含攻击链步骤、原始 HTTP/命令、响应现象、证据与关联。" +
-						"发现/利用类必填；环境类建议含来源证据。攻击链类可参考模板章节：结论、目标与入口、攻击链、Exploit/POC、关键证据、关联、备注",
+						"发现/利用类首次写入必填；环境类建议含来源证据。攻击链类可参考模板章节：结论、目标与入口、攻击链、Exploit/POC、关键证据、关联、备注。" +
+						"更新已有 fact_key 时若省略或留空 body，将保留库中已有 body（可只改 summary）。",
 				},
 				"confidence": map[string]interface{}{
 					"type":        "string",
@@ -263,6 +264,42 @@ func registerProjectFactTools(mcpServer *mcp.Server, db *database.DB, cfg *confi
 			return textResult("错误: "+err.Error(), true), nil
 		}
 		return textResult("事实已标记为 deprecated: "+key, false), nil
+	})
+
+	restoreTool := mcp.Tool{
+		Name:             builtin.ToolRestoreProjectFact,
+		Description:      "将已废弃（deprecated）的事实恢复为 tentative 或 confirmed，重新参与黑板索引。",
+		ShortDescription: "恢复已废弃的项目事实",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"fact_key": map[string]interface{}{"type": "string"},
+				"confidence": map[string]interface{}{
+					"type":        "string",
+					"description": "恢复后的置信度：tentative（默认）或 confirmed",
+					"enum":        []string{"tentative", "confirmed"},
+				},
+			},
+			"required": []string{"fact_key"},
+		},
+	}
+	mcpServer.RegisterTool(restoreTool, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
+		projectID, err := projectIDFromConversation(db, ctx)
+		if err != nil {
+			return textResult("错误: "+err.Error(), true), nil
+		}
+		key := strings.TrimSpace(strArg(args, "fact_key"))
+		if key == "" {
+			return textResult("错误: fact_key 必填", true), nil
+		}
+		conf := strArg(args, "confidence")
+		if err := db.RestoreProjectFact(projectID, key, conf); err != nil {
+			return textResult("错误: "+err.Error(), true), nil
+		}
+		if conf == "" {
+			conf = "tentative"
+		}
+		return textResult(fmt.Sprintf("事实已恢复为 %s: %s", conf, key), false), nil
 	})
 
 	if logger != nil {
