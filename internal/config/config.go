@@ -64,10 +64,10 @@ func (c ProjectConfig) FactSummaryMaxRunesEffective() int {
 	return c.FactSummaryMaxRunes
 }
 
-// MultiAgentConfig 基于 CloudWeGo Eino adk/prebuilt 的多代理编排（deep | plan_execute | supervisor，与单 Agent /agent-loop 并存）。
+// MultiAgentConfig 基于 CloudWeGo Eino adk/prebuilt 的多代理编排（deep | plan_execute | supervisor）。
 type MultiAgentConfig struct {
 	Enabled               bool   `yaml:"enabled" json:"enabled"`
-	RobotDefaultAgentMode string `yaml:"robot_default_agent_mode,omitempty" json:"robot_default_agent_mode,omitempty"` // react | eino_single | deep | plan_execute | supervisor
+	RobotDefaultAgentMode string `yaml:"robot_default_agent_mode,omitempty" json:"robot_default_agent_mode,omitempty"` // eino_single | deep | plan_execute | supervisor
 	BatchUseMultiAgent     bool   `yaml:"batch_use_multi_agent" json:"batch_use_multi_agent"` // 为 true 时批量任务队列中每子任务走 Eino 多代理
 	// Orchestration 已弃用：保留仅兼容旧版 config.yaml；编排由聊天/WebShell 请求体 orchestration 决定，未传时按 deep。
 	Orchestration string `yaml:"orchestration,omitempty" json:"orchestration,omitempty"`
@@ -237,9 +237,6 @@ type MultiAgentEinoMiddlewareConfig struct {
 	SummarizationTriggerRatio float64 `yaml:"summarization_trigger_ratio,omitempty" json:"summarization_trigger_ratio,omitempty"`
 	// SummarizationEmitInternalEvents controls middleware internal event emission (default true).
 	SummarizationEmitInternalEvents *bool `yaml:"summarization_emit_internal_events,omitempty" json:"summarization_emit_internal_events,omitempty"`
-	// HistoryInputBudgetRatio 已不影响 Eino：从 last_react 轨迹转 ADK 消息时**不再**按 token 比例裁剪（完整注入）。
-	// 字段仍保留，便于旧版 config 不报错；新部署可省略。
-	HistoryInputBudgetRatio float64 `yaml:"history_input_budget_ratio,omitempty" json:"history_input_budget_ratio,omitempty"`
 	// PlanExecuteUserInputBudgetRatio caps planner/replanner/executor userInput prompt budget ratio (default 0.35).
 	PlanExecuteUserInputBudgetRatio float64 `yaml:"plan_execute_user_input_budget_ratio,omitempty" json:"plan_execute_user_input_budget_ratio,omitempty"`
 	// PlanExecuteExecutedStepsBudgetRatio caps executed_steps prompt budget ratio (default 0.2).
@@ -281,20 +278,6 @@ func (c MultiAgentEinoMiddlewareConfig) SummarizationEmitInternalEventsEffective
 		return *c.SummarizationEmitInternalEvents
 	}
 	return true
-}
-
-func (c MultiAgentEinoMiddlewareConfig) HistoryInputBudgetRatioEffective() float64 {
-	v := c.HistoryInputBudgetRatio
-	if v <= 0 {
-		return 0.35
-	}
-	if v < 0.15 {
-		return 0.15
-	}
-	if v > 0.6 {
-		return 0.6
-	}
-	return v
 }
 
 func (c MultiAgentEinoMiddlewareConfig) PlanExecuteUserInputBudgetRatioEffective() float64 {
@@ -403,16 +386,26 @@ type MultiAgentPublic struct {
 	ToolSearchAlwaysVisibleEffectiveTools []string `json:"tool_search_always_visible_effective_tools,omitempty"`
 }
 
-// NormalizeRobotAgentMode 解析机器人默认对话模式（react | eino_single | deep | plan_execute | supervisor）；空值视为 react。
-func NormalizeRobotAgentMode(ma MultiAgentConfig) string {
-	s := strings.TrimSpace(strings.ToLower(ma.RobotDefaultAgentMode))
-	if s == "" || s == "single" || s == "react" {
-		return "react"
-	}
-	if s == "eino_single" {
+// NormalizeAgentMode 解析代理模式（eino_single | deep | plan_execute | supervisor）；空值默认 eino_single。
+func NormalizeAgentMode(mode string) string {
+	s := strings.TrimSpace(strings.ToLower(mode))
+	switch s {
+	case "", "eino_single":
+		return "eino_single"
+	case "deep":
+		return "deep"
+	case "plan_execute", "plan-execute", "planexecute", "pe":
+		return "plan_execute"
+	case "supervisor", "super", "sv":
+		return "supervisor"
+	default:
 		return "eino_single"
 	}
-	return NormalizeMultiAgentOrchestration(s)
+}
+
+// NormalizeRobotAgentMode 解析机器人默认对话模式。
+func NormalizeRobotAgentMode(ma MultiAgentConfig) string {
+	return NormalizeAgentMode(ma.RobotDefaultAgentMode)
 }
 
 // NormalizeMultiAgentOrchestration 返回 deep、plan_execute 或 supervisor。
@@ -532,7 +525,7 @@ type OpenAIConfig struct {
 	BaseURL        string `yaml:"base_url" json:"base_url"`
 	Model          string `yaml:"model" json:"model"`
 	MaxTotalTokens int    `yaml:"max_total_tokens,omitempty" json:"max_total_tokens,omitempty"`
-	// Reasoning 控制 Eino ChatModel 的 thinking / reasoning_effort / output_config 等（仅 Eino 路径生效；原生 ReAct 忽略）。
+	// Reasoning 控制 Eino ChatModel 的 thinking / reasoning_effort / output_config 等（Eino 单/多代理路径生效）。
 	Reasoning OpenAIReasoningConfig `yaml:"reasoning,omitempty" json:"reasoning,omitempty"`
 }
 
