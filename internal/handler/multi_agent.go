@@ -395,7 +395,7 @@ func (h *AgentHandler) MultiAgentLoopStream(c *gin.Context) {
 	sendEvent("done", "", map[string]interface{}{"conversationId": conversationID})
 }
 
-// MultiAgentLoop Eino DeepAgent 非流式对话（与 POST /api/agent-loop 对齐，需 multi_agent.enabled）。
+// MultiAgentLoop Eino DeepAgent 非流式对话（需 multi_agent.enabled）。
 func (h *AgentHandler) MultiAgentLoop(c *gin.Context) {
 	if h.config == nil || !h.config.MultiAgent.Enabled {
 		c.JSON(http.StatusNotFound, gin.H{"error": "多代理未启用，请在 config.yaml 中设置 multi_agent.enabled: true"})

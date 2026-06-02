@@ -423,8 +423,8 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 						},
 						"agentMode": map[string]interface{}{
 							"type":        "string",
-							"description": "代理模式：single（原生 ReAct）| eino_single（Eino ADK 单代理）| deep | plan_execute | supervisor；react 同 single；旧值 multi 按 deep",
-							"enum":        []string{"single", "eino_single", "deep", "plan_execute", "supervisor", "multi", "react"},
+							"description": "代理模式：eino_single（Eino ADK 单代理，默认）| deep | plan_execute | supervisor",
+							"enum":        []string{"eino_single", "deep", "plan_execute", "supervisor"},
 						},
 						"scheduleMode": map[string]interface{}{
 							"type":        "string",
@@ -1121,7 +1121,7 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 				"post": map[string]interface{}{
 					"tags":        []string{"对话管理"},
 					"summary":     "创建对话",
-					"description": "创建一个新的安全测试对话。\n**重要说明**：\n- ✅ 创建的对话会**立即保存到数据库**\n- ✅ 前端页面会**自动刷新**显示新对话\n- ✅ 与前端创建的对话**完全一致**\n**创建对话的两种方式**：\n**方式1（推荐）：** 直接使用 `/api/agent-loop` 发送消息，**不提供** `conversationId` 参数，系统会自动创建新对话并发送消息。这是最简单的方式，一步完成创建和发送。\n**方式2：** 先调用此端点创建空对话，然后使用返回的 `conversationId` 调用 `/api/agent-loop` 发送消息。适用于需要先创建对话，稍后再发送消息的场景。\n**示例**：\n```json\n{\n  \"title\": \"Web应用安全测试\"\n}\n```",
+					"description": "创建一个新的安全测试对话。\n**重要说明**：\n- ✅ 创建的对话会**立即保存到数据库**\n- ✅ 前端页面会**自动刷新**显示新对话\n- ✅ 与前端创建的对话**完全一致**\n**创建对话的两种方式**：\n**方式1（推荐）：** 直接使用 `/api/eino-agent` 发送消息，**不提供** `conversationId` 参数，系统会自动创建新对话并发送消息。这是最简单的方式，一步完成创建和发送。\n**方式2：** 先调用此端点创建空对话，然后使用返回的 `conversationId` 调用 `/api/eino-agent` 发送消息。适用于需要先创建对话，稍后再发送消息的场景。\n**示例**：\n```json\n{\n  \"title\": \"Web应用安全测试\"\n}\n```",
 					"operationId": "createConversation",
 					"requestBody": map[string]interface{}{
 						"required": true,
@@ -1412,148 +1412,11 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 					},
 				},
 			},
-			"/api/agent-loop": map[string]interface{}{
-				"post": map[string]interface{}{
-					"tags":        []string{"对话交互"},
-					"summary":     "发送消息并获取AI回复（非流式）",
-					"description": "向AI发送消息并获取回复（非流式响应）。**这是与AI交互的核心端点**，与前端聊天功能完全一致。\n**重要说明**：\n- ✅ 通过此API创建/发送的消息会**立即保存到数据库**\n- ✅ 前端页面会**自动刷新**显示新创建的对话和消息\n- ✅ 所有操作都有**完整的交互痕迹**，就像在前端操作一样\n- ✅ 支持角色配置，可以指定使用哪个测试角色\n**推荐使用流程**：\n1. **先创建对话**：调用 `POST /api/conversations` 创建新对话，获取 `conversationId`\n2. **再发送消息**：使用返回的 `conversationId` 调用此端点发送消息\n**使用示例**：\n**步骤1 - 创建对话：**\n```json\nPOST /api/conversations\n{\n  \"title\": \"Web应用安全测试\"\n}\n```\n**步骤2 - 发送消息：**\n```json\nPOST /api/agent-loop\n{\n  \"conversationId\": \"返回的对话ID\",\n  \"message\": \"扫描 http://example.com 的SQL注入漏洞\",\n  \"role\": \"渗透测试\"\n}\n```\n**其他方式**：\n如果不提供 `conversationId`，系统会自动创建新对话并发送消息。但**推荐先创建对话**，这样可以更好地管理对话列表。\n**响应**：返回AI的回复、对话ID和MCP执行ID列表。前端会自动刷新显示新消息。",
-					"operationId": "sendMessage",
-					"requestBody": map[string]interface{}{
-						"required": true,
-						"content": map[string]interface{}{
-							"application/json": map[string]interface{}{
-								"schema": map[string]interface{}{
-									"type": "object",
-									"properties": map[string]interface{}{
-										"message": map[string]interface{}{
-											"type":        "string",
-											"description": "要发送的消息（必需）",
-											"example":     "扫描 http://example.com 的SQL注入漏洞",
-										},
-										"conversationId": map[string]interface{}{
-											"type":        "string",
-											"description": "对话ID（可选）。\n- **不提供**：自动创建新对话并发送消息（推荐）\n- **提供**：消息会添加到指定对话中（对话必须存在）",
-											"example":     "550e8400-e29b-41d4-a716-446655440000",
-										},
-										"role": map[string]interface{}{
-											"type":        "string",
-											"description": "角色名称（可选），如：默认、渗透测试、Web应用扫描等",
-											"example":     "默认",
-										},
-									},
-									"required": []string{"message"},
-								},
-							},
-						},
-					},
-					"responses": map[string]interface{}{
-						"200": map[string]interface{}{
-							"description": "消息发送成功，返回AI回复",
-							"content": map[string]interface{}{
-								"application/json": map[string]interface{}{
-									"schema": map[string]interface{}{
-										"type": "object",
-										"properties": map[string]interface{}{
-											"response": map[string]interface{}{
-												"type":        "string",
-												"description": "AI的回复内容",
-											},
-											"conversationId": map[string]interface{}{
-												"type":        "string",
-												"description": "对话ID",
-											},
-											"mcpExecutionIds": map[string]interface{}{
-												"type":        "array",
-												"description": "MCP执行ID列表",
-												"items": map[string]interface{}{
-													"type": "string",
-												},
-											},
-											"time": map[string]interface{}{
-												"type":        "string",
-												"format":      "date-time",
-												"description": "响应时间",
-											},
-										},
-									},
-								},
-							},
-						},
-						"400": map[string]interface{}{
-							"description": "请求参数错误",
-						},
-						"401": map[string]interface{}{
-							"description": "未授权，需要有效的Token",
-						},
-						"500": map[string]interface{}{
-							"description": "服务器内部错误",
-						},
-					},
-				},
-			},
-			"/api/agent-loop/stream": map[string]interface{}{
-				"post": map[string]interface{}{
-					"tags":        []string{"对话交互"},
-					"summary":     "发送消息并获取AI回复（流式）",
-					"description": "向AI发送消息并获取流式回复（Server-Sent Events）。**这是与AI交互的核心端点**，与前端聊天功能完全一致。\n**重要说明**：\n- ✅ 通过此API创建/发送的消息会**立即保存到数据库**\n- ✅ 前端页面会**自动刷新**显示新创建的对话和消息\n- ✅ 所有操作都有**完整的交互痕迹**，就像在前端操作一样\n- ✅ 支持角色配置，可以指定使用哪个测试角色\n- ✅ 返回流式响应，适合实时显示AI回复\n**推荐使用流程**：\n1. **先创建对话**：调用 `POST /api/conversations` 创建新对话，获取 `conversationId`\n2. **再发送消息**：使用返回的 `conversationId` 调用此端点发送消息\n**使用示例**：\n**步骤1 - 创建对话：**\n```json\nPOST /api/conversations\n{\n  \"title\": \"Web应用安全测试\"\n}\n```\n**步骤2 - 发送消息（流式）：**\n```json\nPOST /api/agent-loop/stream\n{\n  \"conversationId\": \"返回的对话ID\",\n  \"message\": \"扫描 http://example.com 的SQL注入漏洞\",\n  \"role\": \"渗透测试\"\n}\n```\n**响应格式**：Server-Sent Events (SSE)，事件类型包括：\n- `message`: 用户消息确认\n- `response`: AI回复片段\n- `progress`: 进度更新\n- `done`: 完成\n- `error`: 错误\n- `cancelled`: 已取消",
-					"operationId": "sendMessageStream",
-					"requestBody": map[string]interface{}{
-						"required": true,
-						"content": map[string]interface{}{
-							"application/json": map[string]interface{}{
-								"schema": map[string]interface{}{
-									"type": "object",
-									"properties": map[string]interface{}{
-										"message": map[string]interface{}{
-											"type":        "string",
-											"description": "要发送的消息（必需）",
-											"example":     "扫描 http://example.com 的SQL注入漏洞",
-										},
-										"conversationId": map[string]interface{}{
-											"type":        "string",
-											"description": "对话ID（可选）。\n- **不提供**：自动创建新对话并发送消息（推荐）\n- **提供**：消息会添加到指定对话中（对话必须存在）",
-											"example":     "550e8400-e29b-41d4-a716-446655440000",
-										},
-										"role": map[string]interface{}{
-											"type":        "string",
-											"description": "角色名称（可选），如：默认、渗透测试、Web应用扫描等",
-											"example":     "默认",
-										},
-									},
-									"required": []string{"message"},
-								},
-							},
-						},
-					},
-					"responses": map[string]interface{}{
-						"200": map[string]interface{}{
-							"description": "流式响应（Server-Sent Events）",
-							"content": map[string]interface{}{
-								"text/event-stream": map[string]interface{}{
-									"schema": map[string]interface{}{
-										"type":        "string",
-										"description": "SSE流式数据",
-									},
-								},
-							},
-						},
-						"400": map[string]interface{}{
-							"description": "请求参数错误",
-						},
-						"401": map[string]interface{}{
-							"description": "未授权，需要有效的Token",
-						},
-						"500": map[string]interface{}{
-							"description": "服务器内部错误",
-						},
-					},
-				},
-			},
 			"/api/eino-agent": map[string]interface{}{
 				"post": map[string]interface{}{
 					"tags":        []string{"对话交互"},
 					"summary":     "发送消息并获取 AI 回复（Eino ADK 单代理，非流式）",
-					"description": "与 `POST /api/agent-loop` 请求体相同，由 **CloudWeGo Eino** `adk.NewChatModelAgent` + `adk.NewRunner.Run` 执行（单代理 MCP 工具链）。**不依赖** `multi_agent.enabled`；`multi_agent.eino_skills` / `eino_middleware` 等与多代理主代理一致时可生效。支持 `webshellConnectionId`。",
+					"description": "向 AI 发送消息并获取回复（非流式）。由 **CloudWeGo Eino** `adk.NewChatModelAgent` + `adk.NewRunner.Run` 执行单代理 MCP 工具链。**不依赖** `multi_agent.enabled`；`multi_agent.eino_skills` / `eino_middleware` 等与多代理主代理一致时可生效。支持 `webshellConnectionId`、角色与附件。",
 					"operationId": "sendMessageEinoSingleAgent",
 					"requestBody": map[string]interface{}{
 						"required": true,
@@ -1573,7 +1436,7 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 						},
 					},
 					"responses": map[string]interface{}{
-						"200": map[string]interface{}{"description": "成功，响应格式同 /api/agent-loop"},
+						"200": map[string]interface{}{"description": "成功，响应格式同 /api/eino-agent"},
 						"400": map[string]interface{}{"description": "参数错误"},
 						"401": map[string]interface{}{"description": "未授权"},
 						"500": map[string]interface{}{"description": "执行失败"},
@@ -1584,7 +1447,7 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 				"post": map[string]interface{}{
 					"tags":        []string{"对话交互"},
 					"summary":     "发送消息并获取 AI 回复（Eino ADK 单代理，SSE）",
-					"description": "与 `POST /api/agent-loop/stream` 类似；由 Eino **单代理** ADK 执行。事件类型与多代理流式一致（含 `tool_call` / `response_delta` 等）。**不依赖** `multi_agent.enabled`。",
+					"description": "向 AI 发送消息并获取流式回复（SSE）。由 Eino **单代理** ADK 执行；事件类型与多代理流式一致（含 `tool_call` / `response_delta` / `thinking` 等）。**不依赖** `multi_agent.enabled`。",
 					"operationId": "sendMessageEinoSingleAgentStream",
 					"requestBody": map[string]interface{}{
 						"required": true,
@@ -1623,7 +1486,7 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 				"post": map[string]interface{}{
 					"tags":        []string{"对话交互"},
 					"summary":     "发送消息并获取 AI 回复（Eino 多代理，非流式）",
-					"description": "与 `POST /api/agent-loop` 请求体相同，但由 **CloudWeGo Eino** 多代理执行。编排由请求体 `orchestration`（`deep` | `plan_execute` | `supervisor`）指定，缺省为 `deep`。**前提**：`multi_agent.enabled: true`；未启用时返回 404 JSON。支持 `webshellConnectionId`。",
+					"description": "与 `POST /api/eino-agent` 请求体相同，但由 **CloudWeGo Eino** 多代理执行。编排由请求体 `orchestration`（`deep` | `plan_execute` | `supervisor`）指定，缺省为 `deep`。**前提**：`multi_agent.enabled: true`；未启用时返回 404 JSON。支持 `webshellConnectionId`。",
 					"operationId": "sendMessageMultiAgent",
 					"requestBody": map[string]interface{}{
 						"required": true,
@@ -1646,7 +1509,7 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 										},
 										"webshellConnectionId": map[string]interface{}{
 											"type":        "string",
-											"description": "WebShell 连接 ID（可选，与 agent-loop 行为一致）",
+											"description": "WebShell 连接 ID（可选，与 Eino 单/多代理流式行为一致）",
 										},
 										"orchestration": map[string]interface{}{
 											"type":        "string",
@@ -1661,7 +1524,7 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 					},
 					"responses": map[string]interface{}{
 						"200": map[string]interface{}{
-							"description": "成功，响应格式同 /api/agent-loop",
+							"description": "成功，响应格式同 /api/eino-agent",
 						},
 						"400": map[string]interface{}{"description": "参数错误"},
 						"401": map[string]interface{}{"description": "未授权"},
@@ -1674,7 +1537,7 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 				"post": map[string]interface{}{
 					"tags":        []string{"对话交互"},
 					"summary":     "发送消息并获取 AI 回复（Eino 多代理，SSE）",
-					"description": "与 `POST /api/agent-loop/stream` 类似；由 Eino 多代理执行。`orchestration` 指定 deep / plan_execute / supervisor，缺省 deep。**前提**：`multi_agent.enabled: true`；未启用时 SSE 内首条为 `type: error` 后接 `done`。支持 `webshellConnectionId`。",
+					"description": "与 `POST /api/eino-agent/stream` 类似；由 Eino 多代理执行。`orchestration` 指定 deep / plan_execute / supervisor，缺省 deep。**前提**：`multi_agent.enabled: true`；未启用时 SSE 内首条为 `type: error` 后接 `done`。支持 `webshellConnectionId`。",
 					"operationId": "sendMessageMultiAgentStream",
 					"requestBody": map[string]interface{}{
 						"required": true,
@@ -4790,7 +4653,7 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 									"properties": map[string]interface{}{
 										"title":     map[string]interface{}{"type": "string", "description": "队列标题"},
 										"role":      map[string]interface{}{"type": "string", "description": "使用的角色名称"},
-										"agentMode": map[string]interface{}{"type": "string", "description": "代理模式", "enum": []string{"single", "eino_single", "deep", "plan_execute", "supervisor"}},
+										"agentMode": map[string]interface{}{"type": "string", "description": "代理模式", "enum": []string{"eino_single", "deep", "plan_execute", "supervisor"}},
 									},
 								},
 							},

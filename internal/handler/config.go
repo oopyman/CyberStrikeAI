@@ -783,7 +783,7 @@ func (h *ConfigHandler) UpdateConfig(c *gin.Context) {
 		if mode := strings.TrimSpace(req.MultiAgent.RobotDefaultAgentMode); mode != "" {
 			h.config.MultiAgent.RobotDefaultAgentMode = mode
 		} else {
-			h.config.MultiAgent.RobotDefaultAgentMode = "react"
+			h.config.MultiAgent.RobotDefaultAgentMode = "eino_single"
 		}
 		if req.MultiAgent.PlanExecuteLoopMaxIterations != nil {
 			h.config.MultiAgent.PlanExecuteLoopMaxIterations = *req.MultiAgent.PlanExecuteLoopMaxIterations
