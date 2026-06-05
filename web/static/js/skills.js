@@ -468,6 +468,11 @@ function showAddSkillModal() {
     modal.style.display = 'flex';
 }
 
+function skillPackagePathDepth(path) {
+    if (!path) return 0;
+    return (String(path).replace(/\/$/, '').match(/\//g) || []).length;
+}
+
 function renderSkillPackageTree() {
     const el = document.getElementById('skill-package-tree');
     if (!el) return;
@@ -479,13 +484,19 @@ function renderSkillPackageTree() {
     }
     el.innerHTML = rows.map(f => {
         const path = f.path || '';
+        const indent = 8 + skillPackagePathDepth(path) * 14;
         if (f.is_dir) {
-            return `<div style="padding:4px 6px;opacity:0.85;font-weight:600;">${escapeHtml(path)}/</div>`;
+            const dirLabel = path.endsWith('/') ? path : path + '/';
+            return `<div class="skill-tree-row skill-tree-dir" style="padding-left:${indent}px" title="${escapeHtml(_t('skillModal.folderHint'))}">` +
+                `<span class="skill-tree-icon" aria-hidden="true">📁</span>` +
+                `<span class="skill-tree-label">${escapeHtml(dirLabel)}</span>` +
+                `</div>`;
         }
-        const sel = path === skillActivePath
-            ? 'font-weight:600;background:rgba(99,102,241,0.12);'
-            : '';
-        return `<div style="padding:4px 6px;cursor:pointer;border-radius:4px;margin-bottom:2px;${sel}" data-skill-tree-path="${escapeHtml(path)}" class="skill-tree-item">${escapeHtml(path)}</div>`;
+        const selected = path === skillActivePath ? ' is-selected' : '';
+        return `<div class="skill-tree-row skill-tree-file${selected}" style="padding-left:${indent}px" data-skill-tree-path="${escapeHtml(path)}" title="${escapeHtml(_t('skillModal.clickToEdit'))}">` +
+            `<span class="skill-tree-icon" aria-hidden="true">📄</span>` +
+            `<span class="skill-tree-label">${escapeHtml(path)}</span>` +
+            `</div>`;
     }).join('');
     el.querySelectorAll('[data-skill-tree-path]').forEach(node => {
         node.addEventListener('click', () => {

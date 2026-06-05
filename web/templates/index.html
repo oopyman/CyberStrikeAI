@@ -3555,8 +3555,9 @@
                 </div>
                 <div class="form-group" id="skill-package-editor" style="display: none;">
                     <label data-i18n="skillModal.packageFiles">包内文件（标准 Agent Skills 布局）</label>
+                    <small class="skill-package-tree-hint" data-i18n="skillModal.packageFilesHint">点击文件进行编辑；文件夹仅作分组展示，不可点击</small>
                     <div style="display: flex; gap: 12px; align-items: flex-start; min-height: 300px;">
-                        <div id="skill-package-tree" style="flex: 0 0 240px; max-height: 440px; overflow: auto; border: 1px solid rgba(127,127,127,0.25); border-radius: 6px; padding: 8px; font-size: 13px; line-height: 1.4;"></div>
+                        <div id="skill-package-tree"></div>
                         <div style="flex: 1; min-width: 0;">
                             <div style="margin-bottom: 8px; font-size: 13px;">
                                 <span data-i18n="skillModal.editingFile">正在编辑</span> <code id="skill-active-path">SKILL.md</code>

@@ -3637,10 +3637,15 @@ function buildMcpTimelineSvg(points, rangeKey) {
     const tickIdx = points.length <= 2
         ? points.map((_, i) => i)
         : [0, Math.floor((points.length - 1) / 2), points.length - 1];
-    const xLabels = tickIdx.map((idx) => {
+    const xLabels = tickIdx.map((idx, ti) => {
         const c = coords[idx];
         const label = formatMcpTimelineLabel(c.p.t, rangeKey, locale);
-        return `<text class="mcp-stats-timeline-axis" x="${c.x.toFixed(2)}" y="${H - 5}" text-anchor="middle">${escapeHtml(label)}</text>`;
+        let anchor = 'middle';
+        if (tickIdx.length > 1) {
+            if (ti === 0) anchor = 'start';
+            else if (ti === tickIdx.length - 1) anchor = 'end';
+        }
+        return `<text class="mcp-stats-timeline-axis" x="${c.x.toFixed(2)}" y="${H - 5}" text-anchor="${anchor}">${escapeHtml(label)}</text>`;
     }).join('');
 
     const dots = coords.map((c) => {

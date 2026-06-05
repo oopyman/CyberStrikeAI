@@ -5556,6 +5556,80 @@ header {
     padding-bottom: 0;
 }
 
+/* Skill 包内文件树：区分不可点击的文件夹与可点击的文件 */
+#skill-package-tree {
+    flex: 0 0 240px;
+    max-height: 440px;
+    overflow: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 6px 4px;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.skill-package-tree-hint {
+    display: block;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 4px 0 8px;
+    line-height: 1.45;
+}
+
+.skill-tree-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 5px 8px;
+    border-radius: 4px;
+    margin-bottom: 1px;
+    min-width: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 12px;
+    word-break: break-all;
+    line-height: 1.35;
+}
+
+.skill-tree-dir {
+    color: var(--text-muted);
+    cursor: default;
+    user-select: none;
+    font-weight: 500;
+    opacity: 0.88;
+}
+
+.skill-tree-dir .skill-tree-icon {
+    opacity: 0.65;
+}
+
+.skill-tree-file {
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.skill-tree-file:hover {
+    background: rgba(0, 102, 255, 0.08);
+}
+
+.skill-tree-file.is-selected {
+    font-weight: 600;
+    background: rgba(99, 102, 241, 0.12);
+    color: var(--accent-color);
+}
+
+.skill-tree-icon {
+    flex-shrink: 0;
+    width: 1.15em;
+    text-align: center;
+    line-height: 1.35;
+}
+
+.skill-tree-label {
+    min-width: 0;
+    flex: 1;
+}
+
 .pagination-fixed {
     background: var(--bg-primary);
     margin-top: 0;
