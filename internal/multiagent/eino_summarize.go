@@ -146,20 +146,27 @@ func newEinoSummarizationMiddleware(
 			return summarizeFinalizeWithRecentAssistantToolTrail(ctx, originalMessages, summary, tokenCounter, recentTrailMax)
 		},
 		Callback: func(ctx context.Context, before, after adk.ChatModelAgentState) error {
-			if logger == nil {
-				return nil
+			if transcriptPath != "" && len(before.Messages) > 0 {
+				if werr := writeSummarizationTranscript(transcriptPath, before.Messages); werr != nil && logger != nil {
+					logger.Warn("eino summarization transcript 写入失败",
+						zap.String("path", transcriptPath),
+						zap.Error(werr),
+					)
+				}
 			}
-			beforeTokens, _ := tokenCounter(ctx, &summarization.TokenCounterInput{Messages: before.Messages})
-			afterTokens, _ := tokenCounter(ctx, &summarization.TokenCounterInput{Messages: after.Messages})
-			logger.Info("eino summarization 已压缩上下文",
-				zap.Int("messages_before", len(before.Messages)),
-				zap.Int("messages_after", len(after.Messages)),
-				zap.Int("tokens_before_estimated", beforeTokens),
-				zap.Int("tokens_after_estimated", afterTokens),
-				zap.Int("max_total_tokens", maxTotal),
-				zap.Int("trigger_context_tokens", trigger),
-				zap.String("transcript_file", transcriptPath),
-			)
+			if logger != nil {
+				beforeTokens, _ := tokenCounter(ctx, &summarization.TokenCounterInput{Messages: before.Messages})
+				afterTokens, _ := tokenCounter(ctx, &summarization.TokenCounterInput{Messages: after.Messages})
+				logger.Info("eino summarization 已压缩上下文",
+					zap.Int("messages_before", len(before.Messages)),
+					zap.Int("messages_after", len(after.Messages)),
+					zap.Int("tokens_before_estimated", beforeTokens),
+					zap.Int("tokens_after_estimated", afterTokens),
+					zap.Int("max_total_tokens", maxTotal),
+					zap.Int("trigger_context_tokens", trigger),
+					zap.String("transcript_file", transcriptPath),
+				)
+			}
 			return nil
 		},
 	})
@@ -333,6 +340,23 @@ func splitMessagesIntoRounds(msgs []adk.Message) []messageRound {
 		}
 	}
 	return rounds
+}
+
+// writeSummarizationTranscript persists pre-compaction history for read_file after summarization.
+// Eino TranscriptFilePath only embeds the path in summary text; the file must be written by the host app.
+func writeSummarizationTranscript(path string, msgs []adk.Message) error {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil
+	}
+	body := formatSummarizationTranscript(msgs)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("mkdir transcript dir: %w", err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		return fmt.Errorf("write transcript: %w", err)
+	}
+	return nil
 }
 
 func einoSummarizationTokenCounter(openAIModel string) summarization.TokenCounterFunc {
