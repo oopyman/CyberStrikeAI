@@ -77,8 +77,8 @@ func (h *MonitorHandler) Monitor(c *gin.Context) {
 
 	// 解析状态筛选参数
 	status := c.Query("status")
-	// 解析工具筛选参数
-	toolName := c.Query("tool")
+	// 解析工具筛选参数（兼容 mcp__tool 与内部 mcp::tool）
+	toolName := normalizeToolNameFilter(c.Query("tool"))
 
 	executions, total := h.loadExecutionsWithPagination(page, pageSize, status, toolName)
 	stats := h.loadStats()
@@ -113,7 +113,7 @@ func (h *MonitorHandler) loadExecutionsWithPagination(page, pageSize int, status
 			for _, exec := range allExecutions {
 				matchStatus := status == "" || exec.Status == status
 				// 支持部分匹配（模糊搜索）
-				matchTool := toolName == "" || strings.Contains(strings.ToLower(exec.ToolName), strings.ToLower(toolName))
+				matchTool := toolNameFilterMatches(exec.ToolName, toolName)
 				if matchStatus && matchTool {
 					filtered = append(filtered, exec)
 				}
@@ -143,7 +143,7 @@ func (h *MonitorHandler) loadExecutionsWithPagination(page, pageSize int, status
 			for _, exec := range allExecutions {
 				matchStatus := status == "" || exec.Status == status
 				// 支持部分匹配（模糊搜索）
-				matchTool := toolName == "" || strings.Contains(strings.ToLower(exec.ToolName), strings.ToLower(toolName))
+				matchTool := toolNameFilterMatches(exec.ToolName, toolName)
 				if matchStatus && matchTool {
 					filtered = append(filtered, exec)
 				}
@@ -583,4 +583,36 @@ func (h *MonitorHandler) DeleteExecutions(c *gin.Context) {
 	// 注意：内存中的记录可能已经被清理，所以这里只记录日志
 	h.logger.Info("尝试批量删除内存中的执行记录", zap.Int("count", len(request.IDs)))
 	c.JSON(http.StatusOK, gin.H{"message": "执行记录已删除（如果存在）"})
+}
+
+// normalizeToolNameFilter 将模型侧 mcp__tool 转为内部存储用的 mcp::tool。
+func normalizeToolNameFilter(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return name
+	}
+	if strings.Contains(name, "::") {
+		return name
+	}
+	if idx := strings.Index(name, "__"); idx > 0 {
+		return name[:idx] + "::" + name[idx+2:]
+	}
+	return name
+}
+
+func toolNameFilterMatches(storedName, filter string) bool {
+	filter = strings.TrimSpace(filter)
+	if filter == "" {
+		return true
+	}
+	storedLower := strings.ToLower(storedName)
+	filterLower := strings.ToLower(filter)
+	if strings.Contains(storedLower, filterLower) {
+		return true
+	}
+	normFilter := strings.ToLower(normalizeToolNameFilter(filter))
+	if normFilter != filterLower && strings.Contains(storedLower, normFilter) {
+		return true
+	}
+	return strings.Contains(strings.ReplaceAll(storedLower, "::", "__"), filterLower)
 }
