@@ -7196,17 +7196,68 @@ header {
     stroke-width: 2;
 }
 
-.mcp-stats-timeline-empty,
 .mcp-stats-timeline-error {
     margin: 0;
-    padding: 20px 8px;
+    padding: 16px 8px;
     text-align: center;
     font-size: 0.75rem;
-    color: var(--text-muted);
+    color: #b91c1c;
 }
 
-.mcp-stats-timeline-error {
-    color: #b91c1c;
+.mcp-stats-timeline-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    flex: 1;
+    min-height: 88px;
+    padding: 20px 16px;
+    text-align: center;
+    border-radius: 8px;
+    background: rgba(148, 163, 184, 0.06);
+    border: 1px dashed rgba(148, 163, 184, 0.28);
+}
+
+.mcp-stats-timeline-empty-state--compact {
+    min-height: 72px;
+    padding: 14px 10px;
+    gap: 4px;
+}
+
+.mcp-stats-timeline-empty-state__icon {
+    color: rgba(148, 163, 184, 0.75);
+    flex-shrink: 0;
+}
+
+.mcp-stats-timeline-empty-state--compact .mcp-stats-timeline-empty-state__icon {
+    width: 28px;
+    height: 28px;
+}
+
+.mcp-stats-timeline-empty-state__title {
+    margin: 0;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+.mcp-stats-timeline-empty-state--compact .mcp-stats-timeline-empty-state__title {
+    font-size: 0.75rem;
+}
+
+.mcp-stats-timeline-empty-state__hint {
+    margin: 0;
+    max-width: 28em;
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+    line-height: 1.45;
+}
+
+.mcp-stats-timeline-empty-state--compact .mcp-stats-timeline-empty-state__hint {
+    font-size: 0.625rem;
+    max-width: 100%;
 }
 
 .mcp-stats-timeline-tooltip {

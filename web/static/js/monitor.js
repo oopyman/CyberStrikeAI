@@ -3986,7 +3986,9 @@ async function setMcpMonitorTimelineRange(range) {
         monitorState.timeline = timelineJson;
         const timelineInner = document.querySelector('#monitor-stats .mcp-stats-combined__timeline-inner');
         if (timelineInner) {
-            timelineInner.innerHTML = renderMcpStatsTimelineBody(monitorState.timeline, monitorState.timelineError);
+            const combined = timelineInner.closest('.mcp-stats-combined');
+            const compactEmpty = combined && !!combined.querySelector('.mcp-stats-combined__main');
+            timelineInner.innerHTML = renderMcpStatsTimelineBody(monitorState.timeline, monitorState.timelineError, compactEmpty);
             bindMcpStatsTimelineEvents();
             syncMcpMonitorTimelineRangeUI(range);
         } else if (monitorState.stats && Object.keys(monitorState.stats).length > 0) {
@@ -3996,7 +3998,9 @@ async function setMcpMonitorTimelineRange(range) {
         monitorState.timelineError = err.message || 'error';
         const timelineInner = document.querySelector('#monitor-stats .mcp-stats-combined__timeline-inner');
         if (timelineInner) {
-            timelineInner.innerHTML = renderMcpStatsTimelineBody(monitorState.timeline, monitorState.timelineError);
+            const combined = timelineInner.closest('.mcp-stats-combined');
+            const compactEmpty = combined && !!combined.querySelector('.mcp-stats-combined__main');
+            timelineInner.innerHTML = renderMcpStatsTimelineBody(monitorState.timeline, monitorState.timelineError, compactEmpty);
             bindMcpStatsTimelineEvents();
             syncMcpMonitorTimelineRangeUI(range);
         }
@@ -4014,7 +4018,21 @@ function renderMcpStatsTimelineRangeButtons() {
     }).join('');
 }
 
-function renderMcpStatsTimelineBody(timeline, timelineError) {
+const MCP_TIMELINE_EMPTY_ICON = '<svg class="mcp-stats-timeline-empty-state__icon" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>';
+
+function renderMcpStatsTimelineEmptyState(compact) {
+    const noData = mcpMonitorT('timelineNoData') || monitorFallback('该时段暂无调用', 'No calls in this period');
+    const emptyHint = mcpMonitorT('timelineEmptyHint')
+        || monitorFallback('切换时间范围查看其他时段，或在对话/任务中调用 MCP 工具', 'Switch the time range or invoke MCP tools in chat or tasks');
+    const compactClass = compact ? ' mcp-stats-timeline-empty-state--compact' : '';
+    return `<div class="mcp-stats-timeline-empty-state${compactClass}">
+        ${MCP_TIMELINE_EMPTY_ICON}
+        <p class="mcp-stats-timeline-empty-state__title">${escapeHtml(noData)}</p>
+        <p class="mcp-stats-timeline-empty-state__hint">${escapeHtml(emptyHint)}</p>
+    </div>`;
+}
+
+function renderMcpStatsTimelineBody(timeline, timelineError, compactEmpty) {
     const hint = mcpMonitorT('timelineHint') || monitorFallback('全部工具合计', 'All tools combined');
 
     if (timelineError) {
@@ -4029,8 +4047,7 @@ function renderMcpStatsTimelineBody(timeline, timelineError) {
         || `区间内 ${summaryTotal} 次 · 峰值 ${peak}`;
 
     if (points.length === 0 || summaryTotal === 0) {
-        const noData = mcpMonitorT('timelineNoData') || monitorFallback('该时段暂无调用', 'No calls in this period');
-        return `<p class="mcp-stats-timeline-empty">${escapeHtml(noData)}</p>`;
+        return renderMcpStatsTimelineEmptyState(!!compactEmpty);
     }
 
     const rangeKey = timeline.range || getMcpMonitorTimelineRange();
@@ -4083,7 +4100,7 @@ function renderMcpStatsCombinedSection(topTools, totals, activeToolFilter, timel
     const timelineCol = showTimeline
         ? `<div class="mcp-stats-combined__timeline">
             <p class="mcp-stats-combined__col-label">${escapeHtml(timelineTitle)}</p>
-            <div class="mcp-stats-combined__timeline-inner">${renderMcpStatsTimelineBody(timeline, timelineError)}</div>
+            <div class="mcp-stats-combined__timeline-inner">${renderMcpStatsTimelineBody(timeline, timelineError, hasTools)}</div>
         </div>`
         : '';
 
@@ -4897,7 +4914,8 @@ function renderMonitorStats(statsMap = {}, lastFetchedAt = null) {
         .sort((a, b) => (b.totalCalls || 0) - (a.totalCalls || 0))
         .slice(0, MCP_STATS_TOP_N);
 
-    const showCombined = showTimeline || topTools.length > 0;
+    const hasAnyCalls = totals.total > 0;
+    const showCombined = hasAnyCalls && (topTools.length > 0 || showTimeline);
     const html = `
         <div class="mcp-exec-stats">
             ${renderMcpStatsMetricsBar(totals, successRate, rateTone, rateSubText, lastCallText, hasCalls)}

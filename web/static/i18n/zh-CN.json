@@ -1571,6 +1571,7 @@
     "timelineSummary": "区间内 {{total}} 次 · 峰值 {{peak}}",
     "timelineSparseHint": "该时段多数时间为 0，峰值 {{peak}} 次出现在 {{peakTime}}",
     "timelineNoData": "该时段暂无调用",
+    "timelineEmptyHint": "切换时间范围查看其他时段，或在对话/任务中调用 MCP 工具",
     "timelineLoadError": "无法加载调用趋势",
     "timelineTotalLegend": "总调用",
     "timelineFailedLegend": "失败",

@@ -1583,6 +1583,7 @@
     "timelineSummary": "{{total}} calls in range · peak {{peak}}",
     "timelineSparseHint": "Most buckets are empty; peak {{peak}} calls at {{peakTime}}",
     "timelineNoData": "No calls in this period",
+    "timelineEmptyHint": "Switch the time range or invoke MCP tools in chat or tasks",
     "timelineLoadError": "Failed to load call trend",
     "timelineTotalLegend": "Total calls",
     "timelineFailedLegend": "Failed",
