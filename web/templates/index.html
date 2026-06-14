@@ -1476,7 +1476,10 @@
                                             <span id="projects-detail-status" class="projects-status-pill projects-status-pill--active" data-i18n="projects.statusActive">进行中</span>
                                         </div>
                                         <p id="projects-detail-meta" class="projects-detail-meta"></p>
-                                        <p id="projects-detail-desc" class="projects-detail-desc"></p>
+                                        <div id="projects-detail-desc-block" class="projects-detail-desc-block" hidden>
+                                            <p id="projects-detail-desc" class="projects-detail-desc is-collapsed"></p>
+                                            <button type="button" id="projects-detail-desc-toggle" class="projects-detail-desc-toggle" hidden onclick="toggleProjectDetailDesc()"></button>
+                                        </div>
                                         <div class="projects-detail-stats" id="projects-detail-stats">
                                             <span class="projects-stat-chip" id="project-stat-facts">0 条事实</span>
                                             <span class="projects-stat-chip" id="project-stat-vulns">0 个漏洞</span>
@@ -1669,7 +1672,8 @@
                                                     </div>
                                                     <div class="projects-form-field">
                                                         <label for="project-edit-description" data-i18n="projects.projectDescription">描述</label>
-                                                        <textarea id="project-edit-description" class="form-input" rows="3" placeholder="测试目标、授权范围、联系人、注意事项…" data-i18n="projects.editDescriptionPlaceholder" data-i18n-attr="placeholder"></textarea>
+                                                        <textarea id="project-edit-description" class="form-input projects-description-textarea" rows="3" maxlength="4000" placeholder="测试目标、授权范围、联系人、注意事项…" data-i18n="projects.editDescriptionPlaceholder" data-i18n-attr="placeholder"></textarea>
+                                                        <small class="form-hint" data-i18n="projects.descriptionLengthHint">简要说明即可（最多 4000 字）；大段日志/POC 请写入事实黑板 body</small>
                                                     </div>
                                                 </div>
                                             </section>
@@ -3777,6 +3781,17 @@
         </div>
     </div>
 
+    <!-- 项目列表操作菜单 -->
+    <div id="projects-list-action-menu" class="context-menu" style="display: none;" role="menu">
+        <div id="projects-list-menu-archive" class="context-menu-item" onclick="toggleProjectArchiveFromListMenu()">
+            <span id="projects-list-menu-archive-text"></span>
+        </div>
+        <div class="context-menu-divider"></div>
+        <div class="context-menu-item context-menu-item-danger" onclick="deleteProjectFromListMenu()">
+            <span id="projects-list-menu-delete-text"></span>
+        </div>
+    </div>
+
     <!-- 新建任务模态框 -->
     <div id="batch-import-modal" class="modal">
         <div class="modal-content" style="max-width: 800px;">
@@ -4159,7 +4174,8 @@
                 </div>
                 <div class="projects-form-field">
                     <label for="project-modal-description" data-i18n="projects.projectDescription">项目描述</label>
-                    <textarea id="project-modal-description" class="form-input" rows="4" placeholder="测试范围、授权边界、注意事项…" data-i18n="projects.projectDescriptionPlaceholder" data-i18n-attr="placeholder"></textarea>
+                    <textarea id="project-modal-description" class="form-input projects-description-textarea" rows="4" maxlength="4000" placeholder="测试范围、授权边界、注意事项…" data-i18n="projects.projectDescriptionPlaceholder" data-i18n-attr="placeholder"></textarea>
+                    <small class="form-hint" data-i18n="projects.descriptionLengthHint">简要说明即可（最多 4000 字）；大段日志/POC 请写入事实黑板 body</small>
                 </div>
             </div>
             <div class="projects-modal-footer">
