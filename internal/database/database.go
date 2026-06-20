@@ -353,6 +353,22 @@ func (db *DB) initTables() error {
 		UNIQUE(project_id, fact_key)
 	);`
 
+	// 项目事实关系边（黑板 DAG）
+	createProjectFactEdgesTable := `
+	CREATE TABLE IF NOT EXISTS project_fact_edges (
+		id TEXT PRIMARY KEY,
+		project_id TEXT NOT NULL,
+		source_fact_key TEXT NOT NULL,
+		target_fact_key TEXT NOT NULL,
+		edge_type TEXT NOT NULL,
+		confidence TEXT NOT NULL DEFAULT 'tentative',
+		source_conversation_id TEXT,
+		created_at DATETIME NOT NULL,
+		updated_at DATETIME NOT NULL,
+		FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+		UNIQUE(project_id, source_fact_key, target_fact_key, edge_type)
+	);`
+
 	// 创建漏洞表
 	createVulnerabilitiesTable := `
 	CREATE TABLE IF NOT EXISTS vulnerabilities (
@@ -591,6 +607,9 @@ func (db *DB) initTables() error {
 	CREATE INDEX IF NOT EXISTS idx_project_facts_project_id ON project_facts(project_id);
 	CREATE INDEX IF NOT EXISTS idx_project_facts_confidence ON project_facts(confidence);
 	CREATE INDEX IF NOT EXISTS idx_project_facts_related_vuln ON project_facts(related_vulnerability_id);
+	CREATE INDEX IF NOT EXISTS idx_project_fact_edges_project ON project_fact_edges(project_id);
+	CREATE INDEX IF NOT EXISTS idx_project_fact_edges_source ON project_fact_edges(project_id, source_fact_key);
+	CREATE INDEX IF NOT EXISTS idx_project_fact_edges_target ON project_fact_edges(project_id, target_fact_key);
 	CREATE INDEX IF NOT EXISTS idx_conversations_project_id ON conversations(project_id);
 	CREATE INDEX IF NOT EXISTS idx_vulnerabilities_project_id ON vulnerabilities(project_id);
 	CREATE INDEX IF NOT EXISTS idx_batch_tasks_queue_id ON batch_tasks(queue_id);
@@ -670,6 +689,10 @@ func (db *DB) initTables() error {
 
 	if _, err := db.Exec(createProjectFactsTable); err != nil {
 		return fmt.Errorf("创建project_facts表失败: %w", err)
+	}
+
+	if _, err := db.Exec(createProjectFactEdgesTable); err != nil {
+		return fmt.Errorf("创建project_fact_edges表失败: %w", err)
 	}
 
 	if _, err := db.Exec(createVulnerabilitiesTable); err != nil {

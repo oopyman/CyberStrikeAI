@@ -389,7 +389,7 @@ func (db *DB) UpsertProjectFact(f *ProjectFact) (*ProjectFact, error) {
 	return f, nil
 }
 
-// DeprecateProjectFact 将事实标记为 deprecated。
+// DeprecateProjectFact 将事实标记为 deprecated（关联边同步 deprecated）。
 func (db *DB) DeprecateProjectFact(projectID, factKey string) error {
 	res, err := db.Exec(
 		`UPDATE project_facts SET confidence = 'deprecated', updated_at = ? WHERE project_id = ? AND fact_key = ?`,
@@ -402,7 +402,7 @@ func (db *DB) DeprecateProjectFact(projectID, factKey string) error {
 	if n == 0 {
 		return fmt.Errorf("事实不存在")
 	}
-	return nil
+	return db.DeprecateProjectFactEdgesForKey(projectID, factKey)
 }
 
 // RestoreProjectFact 将已废弃事实恢复为 tentative 或 confirmed（重新参与黑板索引）。
@@ -430,9 +430,16 @@ func (db *DB) RestoreProjectFact(projectID, factKey, confidence string) error {
 	return err
 }
 
-// DeleteProjectFact 删除事实。
+// DeleteProjectFact 删除事实（级联删除相关边）。
 func (db *DB) DeleteProjectFact(id string) error {
-	_, err := db.Exec(`DELETE FROM project_facts WHERE id = ?`, id)
+	f, err := db.GetProjectFact(id)
+	if err != nil {
+		return err
+	}
+	if err := db.DeleteProjectFactEdgesForKey(f.ProjectID, f.FactKey); err != nil {
+		return err
+	}
+	_, err = db.Exec(`DELETE FROM project_facts WHERE id = ?`, id)
 	return err
 }
 

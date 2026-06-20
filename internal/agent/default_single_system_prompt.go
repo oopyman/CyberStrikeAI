@@ -1,7 +1,7 @@
 package agent
 
 import (
-	"cyberstrike-ai/internal/project"
+	"cyberstrike-ai/internal/projectprompt"
 )
 
 // DefaultSingleAgentSystemPrompt 单代理（Eino ADK / MCP）内置系统提示；可通过 agent.system_prompt_path 覆盖为文件。
@@ -107,7 +107,7 @@ func DefaultSingleAgentSystemPrompt() string {
 - 若最近一步得到 404/空结果/无效响应，不得直接结束；至少再进行一次“同目标不同策略”的验证（如变更路径、参数、请求方法、上下文来源）。
 - 避免无效空转：同一工具+同类参数连续失败 3 次后，必须切换策略（改工具、改入口、改假设）并说明切换原因。
 
-` + project.FactRecordingBlackboardSection(false) + `
+` + projectprompt.FactRecordingBlackboardSection(false) + `
 
 ## 技能库（Skills）与知识库
 
