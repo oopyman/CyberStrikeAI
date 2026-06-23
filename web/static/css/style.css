@@ -11797,11 +11797,17 @@ tr.mcp-stats-tool-row[data-tool-name]:focus-visible {
     background: transparent;
     color: var(--text-muted);
     cursor: pointer;
-    border-radius: 4px;
+    border-radius: 6px;
     display: flex;
     align-items: center;
     justify-content: center;
     transition: all 0.2s ease;
+}
+
+.batch-delete-btn svg {
+    width: 16px;
+    height: 16px;
+    transition: transform 0.2s ease;
 }
 
 .batch-delete-btn:hover {
@@ -11809,22 +11815,26 @@ tr.mcp-stats-tool-row[data-tool-name]:focus-visible {
     color: var(--error-color);
 }
 
+.batch-delete-btn:hover svg {
+    transform: scale(1.08);
+}
+
+.batch-delete-btn:active {
+    background: rgba(220, 53, 69, 0.2);
+    transform: scale(0.95);
+}
+
 .batch-manage-footer {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     padding: 16px 24px;
     border-top: 1px solid var(--border-color);
     flex-shrink: 0;
 }
 
-.select-all-checkbox {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+.batch-table-col-checkbox input[type="checkbox"] {
     cursor: pointer;
-    font-size: 0.875rem;
-    color: var(--text-primary);
 }
 
 .batch-footer-actions {

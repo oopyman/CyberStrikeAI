@@ -3777,7 +3777,9 @@
             <div class="modal-body batch-manage-body">
                 <div class="batch-conversations-table">
                     <div class="batch-table-header">
-                        <div class="batch-table-col-checkbox"></div>
+                        <div class="batch-table-col-checkbox">
+                            <input type="checkbox" id="batch-select-all" onchange="toggleSelectAllBatch()" data-i18n="batchManageModal.selectAll" data-i18n-attr="title" title="全选" />
+                        </div>
                         <div class="batch-table-col-name" data-i18n="batchManageModal.conversationName">对话名称</div>
                         <div class="batch-table-col-time" data-i18n="batchManageModal.lastTime">最近一次对话时间</div>
                         <div class="batch-table-col-action" data-i18n="batchManageModal.action">操作</div>
@@ -3786,10 +3788,6 @@
                 </div>
             </div>
             <div class="modal-footer batch-manage-footer">
-                <label class="select-all-checkbox">
-                    <input type="checkbox" id="batch-select-all" onchange="toggleSelectAllBatch()" />
-                    <span data-i18n="batchManageModal.selectAll">全选</span>
-                </label>
                 <div class="batch-footer-actions">
                     <button class="btn-secondary" onclick="closeBatchManageModal()" data-i18n="common.cancel">取消</button>
                     <button class="btn-primary" onclick="deleteSelectedConversations()" data-i18n="batchManageModal.deleteSelected">删除所选</button>

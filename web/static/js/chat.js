@@ -7450,14 +7450,14 @@ async function showBatchManageModal() {
         updateBatchManageTitle(allConversationsForBatch.length);
 
         renderBatchConversations();
-        openAppModal('batch-manage-modal');
+        openAppModal('batch-manage-modal', { focus: false });
     } catch (error) {
         console.error('加载对话列表失败:', error);
         // 错误时使用空数组，不显示错误提示（更友好的用户体验）
         allConversationsForBatch = [];
         updateBatchManageTitle(0);
         renderBatchConversations();
-        openAppModal('batch-manage-modal');
+        openAppModal('batch-manage-modal', { focus: false });
     }
 }
 
@@ -7517,6 +7517,7 @@ function renderBatchConversations(filtered = null) {
         checkbox.type = 'checkbox';
         checkbox.className = 'batch-conversation-checkbox';
         checkbox.dataset.conversationId = conv.id;
+        checkbox.addEventListener('change', syncSelectAllBatchCheckbox);
 
         const name = document.createElement('div');
         name.className = 'batch-table-col-name';
@@ -7542,9 +7543,21 @@ function renderBatchConversations(filtered = null) {
         const action = document.createElement('div');
         action.className = 'batch-table-col-action';
         const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
         deleteBtn.className = 'batch-delete-btn';
-        deleteBtn.innerHTML = '🗑️';
-        deleteBtn.onclick = () => deleteConversation(conv.id);
+        deleteBtn.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14zM10 11v6M14 11v6"
+                      stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        `;
+        const deleteLabel = typeof window.t === 'function' ? window.t('contextMenu.deleteConversation') : '删除此对话';
+        deleteBtn.title = deleteLabel;
+        deleteBtn.setAttribute('aria-label', deleteLabel);
+        deleteBtn.onclick = (e) => {
+            e.stopPropagation();
+            deleteConversation(conv.id);
+        };
         action.appendChild(deleteBtn);
 
         row.appendChild(checkbox);
@@ -7554,6 +7567,8 @@ function renderBatchConversations(filtered = null) {
 
         list.appendChild(row);
     });
+
+    syncSelectAllBatchCheckbox();
 }
 
 // 筛选批量管理对话
@@ -7575,10 +7590,33 @@ function filterBatchConversations(query) {
 function toggleSelectAllBatch() {
     const selectAll = document.getElementById('batch-select-all');
     const checkboxes = document.querySelectorAll('.batch-conversation-checkbox');
-    
+
+    if (selectAll) {
+        selectAll.indeterminate = false;
+    }
     checkboxes.forEach(cb => {
         cb.checked = selectAll.checked;
     });
+}
+
+function syncSelectAllBatchCheckbox() {
+    const selectAll = document.getElementById('batch-select-all');
+    if (!selectAll) return;
+
+    const checkboxes = document.querySelectorAll('.batch-conversation-checkbox');
+    const total = checkboxes.length;
+    const checked = document.querySelectorAll('.batch-conversation-checkbox:checked').length;
+
+    if (total === 0 || checked === 0) {
+        selectAll.checked = false;
+        selectAll.indeterminate = false;
+    } else if (checked === total) {
+        selectAll.checked = true;
+        selectAll.indeterminate = false;
+    } else {
+        selectAll.checked = false;
+        selectAll.indeterminate = true;
+    }
 }
 
 // 删除选中的对话
@@ -7604,6 +7642,7 @@ async function deleteSelectedConversations() {
         const selectAll = document.getElementById('batch-select-all');
         if (selectAll) {
             selectAll.checked = false;
+            selectAll.indeterminate = false;
         }
     } catch (error) {
         console.error('删除失败:', error);
@@ -7619,6 +7658,7 @@ function closeBatchManageModal() {
     const selectAll = document.getElementById('batch-select-all');
     if (selectAll) {
         selectAll.checked = false;
+        selectAll.indeterminate = false;
     }
     allConversationsForBatch = [];
 }
