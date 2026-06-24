@@ -32,10 +32,11 @@ var ToolOutputCallbackCtxKey = toolOutputCallbackCtxKey{}
 
 // Executor 安全工具执行器
 type Executor struct {
-	config    *config.SecurityConfig
-	toolIndex map[string]*config.ToolConfig // 工具索引，用于 O(1) 查找
-	mcpServer *mcp.Server
-	logger    *zap.Logger
+	config                  *config.SecurityConfig
+	toolIndex               map[string]*config.ToolConfig // 工具索引，用于 O(1) 查找
+	mcpServer               *mcp.Server
+	logger                  *zap.Logger
+	shellNoOutputTimeoutSec int // execute/exec 无新输出空闲秒数；0=默认 300；-1=关闭（见 SetShellNoOutputTimeoutSeconds）
 }
 
 // NewExecutor 创建新的执行器
@@ -49,6 +50,11 @@ func NewExecutor(cfg *config.SecurityConfig, mcpServer *mcp.Server, logger *zap.
 	// 构建工具索引
 	executor.buildToolIndex()
 	return executor
+}
+
+// SetShellNoOutputTimeoutSeconds 配置 exec 工具无输出空闲终止（与 agent.shell_no_output_timeout_seconds 一致）。
+func (e *Executor) SetShellNoOutputTimeoutSeconds(sec int) {
+	e.shellNoOutputTimeoutSec = sec
 }
 
 // buildToolIndex 构建工具索引，将 O(n) 查找优化为 O(1)
@@ -133,6 +139,7 @@ func (e *Executor) ExecuteTool(ctx context.Context, toolName string, args map[st
 	// 执行命令
 	cmd := exec.CommandContext(ctx, toolConfig.Command, cmdArgs...)
 	applyDefaultTerminalEnv(cmd)
+	attachNonInteractiveStdin(cmd)
 	_ = prepareShellCmdSession(cmd)
 
 	e.logger.Info("执行安全工具",
@@ -144,7 +151,7 @@ func (e *Executor) ExecuteTool(ctx context.Context, toolName string, args map[st
 	var err error
 	// 如果上层提供了 stdout/stderr 增量回调，则边执行边读取并回调。
 	if cb, ok := ctx.Value(ToolOutputCallbackCtxKey).(ToolOutputCallback); ok && cb != nil {
-		output, err = streamCommandOutput(ctx, cmd, cb)
+		output, err = streamCommandOutput(ctx, cmd, cb, ResolveShellNoOutputTimeoutSeconds(e.shellNoOutputTimeoutSec))
 		if err != nil && shouldRetryWithPTY(output) {
 			e.logger.Info("检测到工具需要 TTY，使用 PTY 重试",
 				zap.String("tool", toolName),
@@ -797,6 +804,8 @@ func (e *Executor) executeSystemCommand(ctx context.Context, args map[string]int
 		zap.String("command", command),
 	)
 
+	command = PrepareNonInteractiveShellCommand(command)
+
 	// 获取shell类型（可选，默认为sh）
 	shell := "sh"
 	if s, ok := args["shell"].(string); ok && s != "" {
@@ -821,6 +830,7 @@ func (e *Executor) executeSystemCommand(ctx context.Context, args map[string]int
 		cmd = exec.CommandContext(ctx, shell, "-c", command)
 	}
 	applyDefaultTerminalEnv(cmd)
+	attachNonInteractiveStdin(cmd)
 	_ = prepareShellCmdSession(cmd)
 
 	// 执行命令
@@ -963,7 +973,7 @@ func (e *Executor) executeSystemCommand(ctx context.Context, args map[string]int
 	var err error
 	// 若上层提供工具输出增量回调，则边执行边流式读取。
 	if cb, ok := ctx.Value(ToolOutputCallbackCtxKey).(ToolOutputCallback); ok && cb != nil {
-		output, err = streamCommandOutput(ctx, cmd, cb)
+		output, err = streamCommandOutput(ctx, cmd, cb, ResolveShellNoOutputTimeoutSeconds(e.shellNoOutputTimeoutSec))
 		if err != nil && shouldRetryWithPTY(output) {
 			e.logger.Info("检测到系统命令需要 TTY，使用 PTY 重试")
 			cmd2 := exec.CommandContext(ctx, shell, "-c", command)
@@ -1024,7 +1034,7 @@ func (e *Executor) executeSystemCommand(ctx context.Context, args map[string]int
 
 // streamCommandOutput 以“边读边回调”的方式读取命令 stdout/stderr。
 // 使用定长块读取，避免按行读取在无换行输出时永久阻塞；ctx 取消时终止进程树。
-func streamCommandOutput(ctx context.Context, cmd *exec.Cmd, cb ToolOutputCallback) (string, error) {
+func streamCommandOutput(ctx context.Context, cmd *exec.Cmd, cb ToolOutputCallback, noOutputSec int) (string, error) {
 	if err := prepareShellCmdSession(cmd); err != nil {
 		return "", err
 	}
@@ -1091,12 +1101,43 @@ func streamCommandOutput(ctx context.Context, cmd *exec.Cmd, cb ToolOutputCallba
 		lastFlush = time.Now()
 	}
 
-	for chunk := range chunks {
-		outBuilder.WriteString(chunk)
-		deltaBuilder.WriteString(chunk)
-		// 简单节流：buffer 大于 2KB 或 200ms 就刷新一次
-		if deltaBuilder.Len() >= 2048 || time.Since(lastFlush) >= 200*time.Millisecond {
-			flush()
+	idleWatch := NewShellInactivityWatch(noOutputSec)
+	if idleWatch != nil {
+		defer idleWatch.Stop()
+	}
+
+	fireInactivity := func() {
+		terminateCmdTree(cmd)
+		msg := ShellNoOutputTimeoutMessage(idleWatch.Sec)
+		outBuilder.WriteString(msg)
+		if cb != nil {
+			cb(msg)
+		}
+		_ = cmd.Wait()
+	}
+
+chunksLoop:
+	for {
+		var idleCh <-chan struct{}
+		if idleWatch != nil {
+			idleCh = idleWatch.Expired
+		}
+		select {
+		case <-idleCh:
+			fireInactivity()
+			return outBuilder.String(), fmt.Errorf("shell inactivity timeout (%ds)", idleWatch.Sec)
+		case chunk, ok := <-chunks:
+			if !ok {
+				break chunksLoop
+			}
+			if chunk != "" && idleWatch != nil {
+				idleWatch.Bump()
+			}
+			outBuilder.WriteString(chunk)
+			deltaBuilder.WriteString(chunk)
+			if deltaBuilder.Len() >= 2048 || time.Since(lastFlush) >= 200*time.Millisecond {
+				flush()
+			}
 		}
 	}
 	flush()
@@ -1116,6 +1157,7 @@ func applyDefaultTerminalEnv(cmd *exec.Cmd) {
 	if cmd.Env == nil {
 		cmd.Env = os.Environ()
 	}
+	cmd.Env = ApplyNonInteractivePagerEnv(cmd.Env)
 	// 如果用户已设置 TERM/COLUMNS/LINES，则不覆盖
 	has := func(k string) bool {
 		prefix := k + "="
@@ -1159,7 +1201,7 @@ func runCommandWithPTY(ctx context.Context, cmd *exec.Cmd, cb ToolOutputCallback
 	if runtime.GOOS == "windows" {
 		// PTY 方案为类 Unix；Windows 走原逻辑
 		if cb != nil {
-			return streamCommandOutput(ctx, cmd, cb)
+			return streamCommandOutput(ctx, cmd, cb, 0)
 		}
 		_ = prepareShellCmdSession(cmd)
 		out, err := cmd.CombinedOutput()
