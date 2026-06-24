@@ -38,3 +38,19 @@ func TestAbortActiveEinoExecute(t *testing.T) {
 		t.Fatal("second abort should fail when no active execute")
 	}
 }
+
+func TestConversationIDForActiveMCPExecution(t *testing.T) {
+	m := NewAgentTaskManager()
+	conv := "conv-mcp-exec"
+	_, err := m.StartTask(conv, "test", func(error) {})
+	if err != nil {
+		t.Fatalf("StartTask: %v", err)
+	}
+	m.RegisterRunningTool(conv, "exec-123")
+	if got := m.ConversationIDForActiveMCPExecution("exec-123"); got != conv {
+		t.Fatalf("got %q, want %q", got, conv)
+	}
+	if got := m.ConversationIDForActiveMCPExecution("missing"); got != "" {
+		t.Fatalf("missing should be empty, got %q", got)
+	}
+}

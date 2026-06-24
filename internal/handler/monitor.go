@@ -23,6 +23,8 @@ import (
 type MonitorHandler struct {
 	mcpServer        *mcp.Server
 	externalMCPMgr   *mcp.ExternalMCPManager
+	taskManager      *AgentTaskManager
+	agentHandler     *AgentHandler
 	executor         *security.Executor
 	db               *database.DB
 	logger           *zap.Logger
@@ -54,6 +56,16 @@ func NewMonitorHandler(mcpServer *mcp.Server, executor *security.Executor, db *d
 // SetExternalMCPManager 设置外部MCP管理器
 func (h *MonitorHandler) SetExternalMCPManager(mgr *mcp.ExternalMCPManager) {
 	h.externalMCPMgr = mgr
+}
+
+// SetTaskManager 设置 Agent 任务管理器（用于 Eino execute 等按 executionId 终止）。
+func (h *MonitorHandler) SetTaskManager(mgr *AgentTaskManager) {
+	h.taskManager = mgr
+}
+
+// SetAgentHandler 设置 Agent 处理器（MCP 监控终止与对话页「中断并继续」共用逻辑）。
+func (h *MonitorHandler) SetAgentHandler(ah *AgentHandler) {
+	h.agentHandler = ah
 }
 
 // MonitorResponse 监控响应
@@ -90,6 +102,7 @@ func (h *MonitorHandler) Monitor(c *gin.Context) {
 	toolName := normalizeToolNameFilter(c.Query("tool"))
 
 	executions, total := h.loadExecutionsWithPagination(page, pageSize, status, toolName)
+	h.enrichExecutionsConversationID(executions)
 	stats := h.loadStats()
 
 	totalPages := (total + pageSize - 1) / pageSize
@@ -247,6 +260,7 @@ func (h *MonitorHandler) GetExecution(c *gin.Context) {
 	// 先从内部MCP服务器查找
 	exec, exists := h.mcpServer.GetExecution(id)
 	if exists {
+		h.enrichExecutionsConversationID([]*mcp.ToolExecution{exec})
 		c.JSON(http.StatusOK, exec)
 		return
 	}
@@ -255,6 +269,7 @@ func (h *MonitorHandler) GetExecution(c *gin.Context) {
 	if h.externalMCPMgr != nil {
 		exec, exists = h.externalMCPMgr.GetExecution(id)
 		if exists {
+			h.enrichExecutionsConversationID([]*mcp.ToolExecution{exec})
 			c.JSON(http.StatusOK, exec)
 			return
 		}
@@ -264,6 +279,7 @@ func (h *MonitorHandler) GetExecution(c *gin.Context) {
 	if h.db != nil {
 		exec, err := h.db.GetToolExecution(id)
 		if err == nil && exec != nil {
+			h.enrichExecutionsConversationID([]*mcp.ToolExecution{exec})
 			c.JSON(http.StatusOK, exec)
 			return
 		}
@@ -290,6 +306,19 @@ func (h *MonitorHandler) CancelExecution(c *gin.Context) {
 		return
 	}
 	note = strings.TrimSpace(body.Note)
+
+	convID := h.conversationIDForRunningExecution(id)
+	if convID != "" && h.agentHandler != nil {
+		if ok, payload := h.agentHandler.cancelToolContinueAfter(convID, id, note); ok {
+			h.logger.Info("MCP 监控页终止工具（与对话中断并继续一致）",
+				zap.String("executionId", id),
+				zap.String("conversationId", convID),
+				zap.Bool("hasNote", note != ""),
+			)
+			c.JSON(http.StatusOK, payload)
+			return
+		}
+	}
 	if h.mcpServer.CancelToolExecutionWithNote(id, note) {
 		h.logger.Info("已请求取消 MCP 工具执行", zap.String("executionId", id), zap.String("source", "internal"), zap.Bool("hasNote", note != ""))
 		c.JSON(http.StatusOK, gin.H{"message": "已发送终止信号", "executionId": id})
@@ -301,6 +330,52 @@ func (h *MonitorHandler) CancelExecution(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusNotFound, gin.H{"error": "未找到进行中的工具执行，或该任务已结束"})
+}
+
+func (h *MonitorHandler) enrichExecutionsConversationID(executions []*mcp.ToolExecution) {
+	for _, exec := range executions {
+		if exec == nil {
+			continue
+		}
+		exec.ConversationID = h.conversationIDForRunningExecution(exec.ID)
+	}
+}
+
+func (h *MonitorHandler) conversationIDForRunningExecution(executionID string) string {
+	executionID = strings.TrimSpace(executionID)
+	if executionID == "" || h.taskManager == nil {
+		return ""
+	}
+	if conv := h.taskManager.ConversationIDForActiveMCPExecution(executionID); conv != "" {
+		return conv
+	}
+	exec := h.lookupExecution(executionID)
+	if exec == nil || exec.Status != "running" {
+		return ""
+	}
+	if strings.TrimSpace(exec.ToolName) == "execute" {
+		if onlyConv, ok := h.taskManager.ConversationIDForActiveEinoExecute(); ok {
+			return onlyConv
+		}
+	}
+	return ""
+}
+
+func (h *MonitorHandler) lookupExecution(id string) *mcp.ToolExecution {
+	if exec, ok := h.mcpServer.GetExecution(id); ok {
+		return exec
+	}
+	if h.externalMCPMgr != nil {
+		if exec, ok := h.externalMCPMgr.GetExecution(id); ok {
+			return exec
+		}
+	}
+	if h.db != nil {
+		if exec, err := h.db.GetToolExecution(id); err == nil && exec != nil {
+			return exec
+		}
+	}
+	return nil
 }
 
 // BatchGetToolNames 批量获取工具执行的工具名称（消除前端 N+1 请求）

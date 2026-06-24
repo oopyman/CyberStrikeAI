@@ -103,6 +103,40 @@ func (m *AgentTaskManager) UnregisterActiveEinoExecute(conversationID string) {
 	}
 }
 
+// ConversationIDForActiveMCPExecution 根据当前登记的工具 executionId 反查会话 ID（供 MCP 监控页按 executionId 终止）。
+func (m *AgentTaskManager) ConversationIDForActiveMCPExecution(executionID string) string {
+	executionID = strings.TrimSpace(executionID)
+	if executionID == "" {
+		return ""
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for convID, t := range m.tasks {
+		if t != nil && t.ActiveMCPExecutionID == executionID {
+			return convID
+		}
+	}
+	return ""
+}
+
+// ConversationIDForActiveEinoExecute 返回当前唯一进行 Eino execute 的会话 ID；多会话并行时返回空。
+func (m *AgentTaskManager) ConversationIDForActiveEinoExecute() (string, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var found string
+	count := 0
+	for convID, t := range m.tasks {
+		if t != nil && t.activeEinoExecuteCancel != nil {
+			found = convID
+			count++
+		}
+	}
+	if count == 1 {
+		return found, true
+	}
+	return "", false
+}
+
 // AbortActiveEinoExecute 终止当前 Eino execute 并暂存用户说明（与 MCP 工具终止一致）。
 func (m *AgentTaskManager) AbortActiveEinoExecute(conversationID, note string) bool {
 	conversationID = strings.TrimSpace(conversationID)

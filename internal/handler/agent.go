@@ -187,6 +187,14 @@ func (h *AgentHandler) SetAudit(s *audit.Service) {
 	h.audit = s
 }
 
+// TaskManager 返回 Agent 任务管理器（供 MCP 监控页终止 Eino execute 等）。
+func (h *AgentHandler) TaskManager() *AgentTaskManager {
+	if h == nil {
+		return nil
+	}
+	return h.tasks
+}
+
 // CancelRunningTaskForConversation stops any in-flight agent work for the conversation (idempotent).
 func (h *AgentHandler) CancelRunningTaskForConversation(conversationID string) {
 	if h == nil || conversationID == "" || h.tasks == nil {
@@ -1291,6 +1299,55 @@ func (h *AgentHandler) createProgressCallback(runCtx context.Context, cancelRun 
 	}
 }
 
+// cancelToolContinueAfter 仅终止当前工具调用，不停止整条 Agent 任务（对话「中断并继续」与 MCP 监控终止共用）。
+func (h *AgentHandler) cancelToolContinueAfter(conversationID, preferredExecID, note string) (bool, gin.H) {
+	conversationID = strings.TrimSpace(conversationID)
+	if conversationID == "" || h.tasks.GetTask(conversationID) == nil {
+		return false, nil
+	}
+	note = strings.TrimSpace(note)
+	execID := strings.TrimSpace(preferredExecID)
+	if execID == "" {
+		execID = h.tasks.ActiveMCPExecutionID(conversationID)
+	}
+	if execID != "" {
+		if h.agent.CancelMCPToolExecutionWithNote(execID, note) {
+			return true, gin.H{
+				"status":              "tool_abort_requested",
+				"conversationId":      conversationID,
+				"executionId":         execID,
+				"message":             "已请求终止当前工具调用；工具返回后本轮推理将继续（与 MCP 监控页终止一致）。",
+				"continueAfter":       true,
+				"interruptWithNote":   note != "",
+				"continueWithoutTool": false,
+			}
+		}
+		if h.tasks.AbortActiveEinoExecute(conversationID, note) {
+			return true, gin.H{
+				"status":              "tool_abort_requested",
+				"conversationId":      conversationID,
+				"executionId":         execID,
+				"message":             "已请求终止当前 execute 命令；命令返回后本轮推理将继续。",
+				"continueAfter":       true,
+				"interruptWithNote":   note != "",
+				"continueWithoutTool": false,
+			}
+		}
+		return false, nil
+	}
+	if h.tasks.AbortActiveEinoExecute(conversationID, note) {
+		return true, gin.H{
+			"status":              "tool_abort_requested",
+			"conversationId":      conversationID,
+			"message":             "已请求终止当前 execute 命令；命令返回后本轮推理将继续。",
+			"continueAfter":       true,
+			"interruptWithNote":   note != "",
+			"continueWithoutTool": false,
+		}
+	}
+	return false, nil
+}
+
 // CancelAgentLoop 取消正在执行的任务
 func (h *AgentHandler) CancelAgentLoop(c *gin.Context) {
 	var req struct {
@@ -1309,42 +1366,20 @@ func (h *AgentHandler) CancelAgentLoop(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "未找到正在执行的任务"})
 			return
 		}
-		execID := h.tasks.ActiveMCPExecutionID(req.ConversationID)
 		note := strings.TrimSpace(req.Reason)
-		if execID != "" {
-			if !h.agent.CancelMCPToolExecutionWithNote(execID, note) {
-				c.JSON(http.StatusNotFound, gin.H{"error": "未找到进行中的工具执行或该调用已结束"})
-				return
-			}
-			h.logger.Info("对话页仅终止当前 MCP 工具",
+		activeExec := strings.TrimSpace(h.tasks.ActiveMCPExecutionID(req.ConversationID))
+		if ok, payload := h.cancelToolContinueAfter(req.ConversationID, "", note); ok {
+			execID, _ := payload["executionId"].(string)
+			h.logger.Info("对话页仅终止当前工具",
 				zap.String("conversationId", req.ConversationID),
 				zap.String("executionId", execID),
 				zap.Bool("hasNote", note != ""),
 			)
-			c.JSON(http.StatusOK, gin.H{
-				"status":              "tool_abort_requested",
-				"conversationId":      req.ConversationID,
-				"executionId":         execID,
-				"message":             "已请求终止当前工具调用；工具返回后本轮推理将继续（与 MCP 监控页终止一致）。",
-				"continueAfter":       true,
-				"interruptWithNote":   note != "",
-				"continueWithoutTool": false,
-			})
+			c.JSON(http.StatusOK, payload)
 			return
 		}
-		if h.tasks.AbortActiveEinoExecute(req.ConversationID, note) {
-			h.logger.Info("对话页仅终止当前 Eino execute",
-				zap.String("conversationId", req.ConversationID),
-				zap.Bool("hasNote", note != ""),
-			)
-			c.JSON(http.StatusOK, gin.H{
-				"status":              "tool_abort_requested",
-				"conversationId":      req.ConversationID,
-				"message":             "已请求终止当前 execute 命令；命令返回后本轮推理将继续。",
-				"continueAfter":       true,
-				"interruptWithNote":   note != "",
-				"continueWithoutTool": false,
-			})
+		if activeExec != "" {
+			c.JSON(http.StatusNotFound, gin.H{"error": "未找到进行中的工具执行或该调用已结束"})
 			return
 		}
 		// 无进行中的 MCP 工具（模型纯推理/流式输出阶段）：取消当前上下文并由 Eino 流式处理器合并用户补充后自动续跑。
