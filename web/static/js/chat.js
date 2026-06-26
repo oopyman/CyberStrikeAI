@@ -3119,7 +3119,7 @@ async function cancelMCPToolExecutionSubmit(executionId, userNote, options = {})
     }
     try {
         if (conversationId && typeof requestCancelWithContinue === 'function') {
-            await requestCancelWithContinue(conversationId, userNote || '');
+            await requestCancelWithContinue(conversationId, userNote || '', { executionId });
         } else {
             const res = await apiFetch(`/api/monitor/execution/${encodeURIComponent(executionId)}/cancel`, {
                 method: 'POST',

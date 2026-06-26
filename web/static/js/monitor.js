@@ -970,17 +970,22 @@ async function requestCancel(conversationId) {
 }
 
 /** 与 MCP 监控一致：仅终止当前进行中的工具调用，工具返回后本轮推理继续（可选 reason 合并进工具结果） */
-async function requestCancelWithContinue(conversationId, reason) {
+async function requestCancelWithContinue(conversationId, reason, options = {}) {
+    const executionId = options && options.executionId ? String(options.executionId).trim() : '';
+    const body = {
+        conversationId,
+        reason: reason || '',
+        continueAfter: true,
+    };
+    if (executionId) {
+        body.executionId = executionId;
+    }
     const response = await apiFetch('/api/agent-loop/cancel', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-            conversationId,
-            reason: reason || '',
-            continueAfter: true,
-        }),
+        body: JSON.stringify(body),
     });
     const result = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -1021,7 +1026,9 @@ async function submitUserInterruptContinue() {
             stopBtn.disabled = true;
             stopBtn.textContent = typeof window.t === 'function' ? window.t('tasks.interruptSubmitting') : '提交中...';
         }
-        await requestCancelWithContinue(conversationId, reason);
+        await requestCancelWithContinue(conversationId, reason, {
+            executionId: monitorCtx && monitorCtx.executionId ? monitorCtx.executionId : '',
+        });
         if (monitorCtx && monitorCtx.executionId && typeof refreshMonitorPanel === 'function') {
             const page = (typeof monitorState !== 'undefined' && monitorState.pagination && monitorState.pagination.page)
                 ? monitorState.pagination.page
