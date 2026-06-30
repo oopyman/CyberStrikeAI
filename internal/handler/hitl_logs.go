@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"cyberstrike-ai/internal/config"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -73,7 +75,13 @@ func hitlInterruptRowToMap(
 }
 
 func (h *AgentHandler) buildHitlListQuery(logs bool) (string, []interface{}) {
-	q := `SELECT id, conversation_id, message_id, mode, tool_name, tool_call_id, payload, status, decision, decision_comment, COALESCE(decided_by,'human'), created_at, decided_at FROM hitl_interrupts WHERE 1=1`
+	where, args := h.buildHitlLogsWhere(logs)
+	q := `SELECT id, conversation_id, message_id, mode, tool_name, tool_call_id, payload, status, decision, decision_comment, COALESCE(decided_by,'human'), created_at, decided_at FROM hitl_interrupts` + where
+	return q, args
+}
+
+func (h *AgentHandler) buildHitlLogsWhere(logs bool) (string, []interface{}) {
+	q := " WHERE 1=1"
 	args := []interface{}{}
 	if logs {
 		q += " AND status != 'pending'"
@@ -173,7 +181,61 @@ func (h *AgentHandler) ListHITLLogs(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"items": items, "page": page, "pageSize": pageSize, "total": total})
+	c.JSON(http.StatusOK, gin.H{"items": items, "page": page, "pageSize": pageSize, "total": total, "retentionDays": h.hitlRetentionDays()})
+}
+
+func (h *AgentHandler) hitlRetentionDays() int {
+	if h.config != nil {
+		return h.config.Hitl.RetentionDaysEffective()
+	}
+	return config.HitlConfig{}.RetentionDaysEffective()
+}
+
+// DeleteHITLLogs 批量删除或按筛选清空已决策的人机协同审计日志（不删除 pending）。
+func (h *AgentHandler) DeleteHITLLogs(c *gin.Context) {
+	var request struct {
+		IDs []string `json:"ids"`
+		All bool     `json:"all"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数无效: " + err.Error()})
+		return
+	}
+
+	var deleted int64
+	var err error
+	if request.All {
+		where, args := h.buildHitlLogsWhere(true)
+		where, args = h.appendHitlListFilters(where, args, c)
+		deleted, err = h.db.DeleteHitlInterruptLogsMatching(where, args)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if h.audit != nil {
+			h.audit.RecordOK(c, "hitl", "logs_clear", "清空人机协同审计日志", "hitl_interrupt", "", map[string]interface{}{
+				"deleted": deleted,
+			})
+		}
+	} else {
+		if len(request.IDs) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "审计日志 ID 列表不能为空"})
+			return
+		}
+		deleted, err = h.db.DeleteHitlInterruptLogsByIDs(request.IDs)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if h.audit != nil {
+			h.audit.RecordOK(c, "hitl", "logs_delete_batch", "批量删除人机协同审计日志", "hitl_interrupt", "", map[string]interface{}{
+				"count":   len(request.IDs),
+				"deleted": deleted,
+			})
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "删除成功", "deleted": deleted})
 }
 
 func (h *AgentHandler) GetHITLLog(c *gin.Context) {

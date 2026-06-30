@@ -21,6 +21,7 @@ import (
 	"cyberstrike-ai/internal/database"
 	"cyberstrike-ai/internal/einoobserve"
 	"cyberstrike-ai/internal/handler"
+	"cyberstrike-ai/internal/hitl"
 	"cyberstrike-ai/internal/knowledge"
 	"cyberstrike-ai/internal/logger"
 	"cyberstrike-ai/internal/mcp"
@@ -108,6 +109,10 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 	monitorRetention := monitor.NewService(db, cfg, log.Logger)
 	monitorRetention.PurgeExpired()
 	monitor.StartRetentionLoop(monitorRetention, log.Logger)
+
+	hitlRetention := hitl.NewService(db, cfg, log.Logger)
+	hitlRetention.PurgeExpired()
+	hitl.StartRetentionLoop(hitlRetention, log.Logger)
 
 	// 创建MCP服务器（带数据库持久化）
 	mcpServer := mcp.NewServerWithStorage(log.Logger, db)
@@ -814,6 +819,7 @@ func setupRoutes(
 		protected.POST("/eino-agent/stream", agentHandler.EinoSingleAgentLoopStream)
 		protected.GET("/hitl/pending", agentHandler.ListHITLPending)
 		protected.GET("/hitl/logs", agentHandler.ListHITLLogs)
+		protected.DELETE("/hitl/logs", agentHandler.DeleteHITLLogs)
 		protected.GET("/hitl/logs/:id", agentHandler.GetHITLLog)
 		protected.POST("/hitl/decision", agentHandler.DecideHITLInterrupt)
 		protected.POST("/hitl/dismiss", agentHandler.DismissHITLInterrupt)
