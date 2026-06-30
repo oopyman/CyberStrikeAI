@@ -649,6 +649,19 @@ type HitlConfig struct {
 	AuditAgentPrompt string `yaml:"audit_agent_prompt,omitempty" json:"audit_agent_prompt,omitempty"`
 	// AuditAgentPromptReviewEdit 审查编辑模式（review_edit）下审计 Agent 系统提示词。
 	AuditAgentPromptReviewEdit string `yaml:"audit_agent_prompt_review_edit,omitempty" json:"audit_agent_prompt_review_edit,omitempty"`
+	// RetentionDays 已决策审计日志（hitl_interrupts 非 pending）保留天数；省略时默认 90；0 表示不自动清理。
+	RetentionDays *int `yaml:"retention_days,omitempty" json:"retention_days,omitempty"`
+}
+
+// RetentionDaysEffective returns retention; 0 means keep forever; omitted defaults to 90.
+func (h HitlConfig) RetentionDaysEffective() int {
+	if h.RetentionDays == nil {
+		return 90
+	}
+	if *h.RetentionDays < 0 {
+		return 0
+	}
+	return *h.RetentionDays
 }
 
 const hitlAuditAgentPromptBase = `你是 CyberStrikeAI 人机协同审计 Agent。审查 Agent 即将执行的工具调用是否会对系统造成实质性损害。
