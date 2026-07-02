@@ -1477,7 +1477,12 @@ func Default() *Config {
 			},
 			Retrieval: RetrievalConfig{
 				TopK:                5,
-				SimilarityThreshold: 0.65, // 降低阈值到 0.65，减少漏检
+				SimilarityThreshold: 0.65,
+				MultiQuery:          MultiQueryConfig{MaxQueries: 4},
+				Rerank:              RerankConfig{},
+				PostRetrieve: PostRetrieveConfig{
+					PrefetchTopK: 20,
+				},
 			},
 			Indexing: IndexingConfig{
 				ChunkStrategy:         "markdown_then_recursive",
@@ -1573,12 +1578,59 @@ type EmbeddingConfig struct {
 
 // PostRetrieveConfig 检索后处理：固定对正文做规范化去重（最佳实践）、上下文预算截断；PrefetchTopK 用于多取候选再收敛到 top_k。
 type PostRetrieveConfig struct {
-	// PrefetchTopK 向量检索阶段最多保留的候选数（余弦序），应 ≥ top_k，0 表示与 top_k 相同；上限见知识库包内常量。
+	// PrefetchTopK 向量检索阶段每条 MultiQuery 变体最多保留的候选数；0 表示使用内置默认 max(top_k*4, 20)。
 	PrefetchTopK int `yaml:"prefetch_top_k,omitempty" json:"prefetch_top_k,omitempty"`
 	// MaxContextChars 返回文档内容总 Unicode 字符数上限（整段 chunk，不截断半段）；0 表示不限制。
 	MaxContextChars int `yaml:"max_context_chars,omitempty" json:"max_context_chars,omitempty"`
 	// MaxContextTokens 返回文档内容总 token 上限（tiktoken，按嵌入模型名映射，失败则 cl100k_base）；0 表示不限制。
 	MaxContextTokens int `yaml:"max_context_tokens,omitempty" json:"max_context_tokens,omitempty"`
+}
+
+// MultiQueryConfig Eino MultiQuery 查询改写（始终启用，无关闭开关）。
+type MultiQueryConfig struct {
+	// MaxQueries LLM 生成的检索变体上限（含原问语义覆盖）；0 表示默认 4。
+	MaxQueries int `yaml:"max_queries,omitempty" json:"max_queries,omitempty"`
+}
+
+func (c MultiQueryConfig) MaxQueriesEffective() int {
+	if c.MaxQueries <= 0 {
+		return 4
+	}
+	if c.MaxQueries > 8 {
+		return 8
+	}
+	return c.MaxQueries
+}
+
+// RerankConfig 检索精排（始终启用）；支持 dashscope 与 Cohere 兼容 HTTP API。
+type RerankConfig struct {
+	// Provider: dashscope | cohere；空则按 base_url 自动推断。
+	Provider string `yaml:"provider,omitempty" json:"provider,omitempty"`
+	Model    string `yaml:"model,omitempty" json:"model,omitempty"`
+	BaseURL  string `yaml:"base_url,omitempty" json:"base_url,omitempty"`
+	APIKey   string `yaml:"api_key,omitempty" json:"api_key,omitempty"`
+}
+
+func (c RerankConfig) ProviderEffective(baseURL string) string {
+	p := strings.TrimSpace(strings.ToLower(c.Provider))
+	if p != "" {
+		return p
+	}
+	u := strings.ToLower(baseURL)
+	if strings.Contains(u, "dashscope") {
+		return "dashscope"
+	}
+	return "cohere"
+}
+
+func (c RerankConfig) ModelEffective(provider string) string {
+	if m := strings.TrimSpace(c.Model); m != "" {
+		return m
+	}
+	if provider == "dashscope" {
+		return "gte-rerank"
+	}
+	return "rerank-multilingual-v3.0"
 }
 
 // RetrievalConfig 检索配置
@@ -1587,7 +1639,9 @@ type RetrievalConfig struct {
 	SimilarityThreshold float64 `yaml:"similarity_threshold" json:"similarity_threshold"` // 余弦相似度阈值
 	// SubIndexFilter 非空时仅保留 sub_indexes 含该标签（逗号分隔之一）的行；sub_indexes 为空的旧行仍返回。
 	SubIndexFilter string `yaml:"sub_index_filter,omitempty" json:"sub_index_filter,omitempty"`
-	// PostRetrieve 检索后处理（去重、预算截断）；重排通过代码注入 [knowledge.DocumentReranker]。
+	MultiQuery     MultiQueryConfig `yaml:"multi_query" json:"multi_query"`
+	Rerank         RerankConfig     `yaml:"rerank" json:"rerank"`
+	// PostRetrieve 检索后处理（去重、预算截断）；精排在 MultiQuery 融合后执行。
 	PostRetrieve PostRetrieveConfig `yaml:"post_retrieve,omitempty" json:"post_retrieve,omitempty"`
 }
 
