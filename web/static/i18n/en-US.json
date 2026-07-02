@@ -39,6 +39,15 @@
     "version": "Current version",
     "toggleSidebar": "Collapse/expand sidebar"
   },
+  "theme": {
+    "system": "System",
+    "light": "Light",
+    "dark": "Dark",
+    "titleSystem": "Current: system theme. Click to switch to light.",
+    "titleLight": "Current: light theme. Click to switch to dark.",
+    "titleDark": "Current: dark theme. Click to switch to system.",
+    "toggle": "Toggle theme"
+  },
   "notifications": {
     "title": "Notifications",
     "empty": "No new events",

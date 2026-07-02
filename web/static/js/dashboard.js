@@ -1707,7 +1707,7 @@ window.navigateToVulnerabilitiesWithFilter = navigateToVulnerabilitiesWithFilter
 
 // 漏洞严重程度分布：半环形（donut）渲染
 // 几何参数固定，便于配合 viewBox 0 0 560 320 的 SVG 容器
-// 段间分隔由 CSS 的白色 stroke 完成，不再使用 gapRad
+// 段间分隔由 gapRad 几何间隙完成，不使用描边，避免浅色/暗色下白边或黑边过重
 var SEVERITY_DONUT_CFG = {
     // viewBox 0 0 480 260：整体保持紧凑，但环厚回到「黄金比例」附近，
     // 让弧带本身有视觉分量，又不像最早那版那样占太多空间。
@@ -1717,7 +1717,7 @@ var SEVERITY_DONUT_CFG = {
     rOuter: 165,
     rInner: 115,    // 环厚 = 50（介于原 90 和上一版 35 之间，自然且有质感）
     labelOffset: 14,
-    gapRad: 0.012
+    gapRad: 0.022
 };
 
 // 三段渐变：[高光浅调, 中段饱和色, 深色边缘] —— 做出类似 3D 釉面的层次
@@ -1759,28 +1759,50 @@ function severityLabel(id) {
     return SEVERITY_DEFAULT_LABELS[id] || id;
 }
 
+function isDashboardDarkTheme() {
+    return document.documentElement.getAttribute('data-theme') === 'dark';
+}
+
 function ensureSeverityDonutDefs() {
     var defsEl = document.getElementById('dashboard-severity-donut-defs');
-    if (!defsEl || defsEl.hasChildNodes()) return;
+    if (!defsEl) return;
+    var dark = isDashboardDarkTheme();
     var html = '';
     html += '<linearGradient id="donut-track-face" x1="0%" y1="0%" x2="0%" y2="100%">';
-    html += '<stop offset="0%" stop-color="#f8fafc"/>';
-    html += '<stop offset="55%" stop-color="#e8eef5"/>';
-    html += '<stop offset="100%" stop-color="#dce5ef"/>';
+    if (dark) {
+        html += '<stop offset="0%" stop-color="#334155"/>';
+        html += '<stop offset="55%" stop-color="#1e293b"/>';
+        html += '<stop offset="100%" stop-color="#172033"/>';
+    } else {
+        html += '<stop offset="0%" stop-color="#f8fafc"/>';
+        html += '<stop offset="55%" stop-color="#e8eef5"/>';
+        html += '<stop offset="100%" stop-color="#dce5ef"/>';
+    }
     html += '</linearGradient>';
     html += '<radialGradient id="donut-track-vignette" cx="50%" cy="85%" r="75%" fx="50%" fy="85%">';
-    html += '<stop offset="0%" stop-color="#ffffff" stop-opacity="0.35"/>';
-    html += '<stop offset="70%" stop-color="#ffffff" stop-opacity="0"/>';
+    if (dark) {
+        html += '<stop offset="0%" stop-color="#0f172a" stop-opacity="0.55"/>';
+        html += '<stop offset="70%" stop-color="#0f172a" stop-opacity="0"/>';
+    } else {
+        html += '<stop offset="0%" stop-color="#ffffff" stop-opacity="0.35"/>';
+        html += '<stop offset="70%" stop-color="#ffffff" stop-opacity="0"/>';
+    }
     html += '</radialGradient>';
     html += '<radialGradient id="donut-inner-gloss" cx="35%" cy="75%" r="55%">';
-    html += '<stop offset="0%" stop-color="#ffffff" stop-opacity="0.45"/>';
-    html += '<stop offset="55%" stop-color="#ffffff" stop-opacity="0.08"/>';
-    html += '<stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>';
+    if (dark) {
+        html += '<stop offset="0%" stop-color="#94a3b8" stop-opacity="0.10"/>';
+        html += '<stop offset="55%" stop-color="#94a3b8" stop-opacity="0.03"/>';
+        html += '<stop offset="100%" stop-color="#94a3b8" stop-opacity="0"/>';
+    } else {
+        html += '<stop offset="0%" stop-color="#ffffff" stop-opacity="0.45"/>';
+        html += '<stop offset="55%" stop-color="#ffffff" stop-opacity="0.08"/>';
+        html += '<stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>';
+    }
     html += '</radialGradient>';
     html += '<filter id="donut-segment-soften" x="-18%" y="-18%" width="136%" height="136%" color-interpolation-filters="sRGB">';
     html += '<feGaussianBlur in="SourceAlpha" stdDeviation="0.8" result="blur"/>';
     html += '<feOffset dx="0" dy="1.5" in="blur" result="off"/>';
-    html += '<feFlood flood-color="#0f172a" flood-opacity="0.13" result="flood"/>';
+    html += '<feFlood flood-color="' + (dark ? '#000000' : '#0f172a') + '" flood-opacity="' + (dark ? '0.28' : '0.13') + '" result="flood"/>';
     html += '<feComposite in="flood" in2="off" operator="in" result="shadow"/>';
     html += '<feMerge><feMergeNode in="shadow"/><feMergeNode in="SourceGraphic"/></feMerge>';
     html += '</filter>';
@@ -1812,13 +1834,11 @@ function renderSeverityDonut(bySeverity, total) {
     ensureSeverityDonutDefs();
 
     // 背景轨迹（完整半环）：双层填充营造凹槽 + 高光
-    if (!trackEl.hasChildNodes()) {
-        var trackPath = halfRingPath(cfg.cx, cfg.cy, cfg.rOuter, cfg.rInner);
-        trackEl.innerHTML =
-            '<path class="donut-track-shadow" d="' + trackPath + '"/>' +
-            '<path class="donut-track" fill="url(#donut-track-face)" d="' + trackPath + '"/>' +
-            '<path class="donut-track-vignette" fill="url(#donut-track-vignette)" d="' + trackPath + '"/>';
-    }
+    var trackPath = halfRingPath(cfg.cx, cfg.cy, cfg.rOuter, cfg.rInner);
+    trackEl.innerHTML =
+        '<path class="donut-track-shadow" d="' + trackPath + '"/>' +
+        '<path class="donut-track" fill="url(#donut-track-face)" d="' + trackPath + '"/>' +
+        '<path class="donut-track-vignette" fill="url(#donut-track-vignette)" d="' + trackPath + '"/>';
 
     var ids = ['critical', 'high', 'medium', 'low', 'info'];
     var severities = ids.map(function (id) {
@@ -2104,6 +2124,20 @@ function attachSeverityDonutInteractivity() {
             legend.addEventListener('mouseout', severityLegendPointerOut);
             legend.addEventListener('click', severityLegendClick);
             legend.addEventListener('keydown', severityLegendKeydown);
+        }
+        if (!severityDonutState.themeObserver) {
+            severityDonutState.themeObserver = new MutationObserver(function (mutations) {
+                for (var i = 0; i < mutations.length; i++) {
+                    if (mutations[i].attributeName === 'data-theme') {
+                        renderSeverityDonut(severityDonutState.bySeverity, severityDonutState.total);
+                        break;
+                    }
+                }
+            });
+            severityDonutState.themeObserver.observe(document.documentElement, {
+                attributes: true,
+                attributeFilter: ['data-theme']
+            });
         }
     }
 

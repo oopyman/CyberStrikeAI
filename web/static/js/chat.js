@@ -4210,6 +4210,7 @@ function renderAttackChain(chainData) {
     const nodeCount = chainData.nodes.length;
     const edgeCount = chainData.edges.length;
     const isComplexGraph = nodeCount > 15 || edgeCount > 25;
+    const isDarkTheme = document.documentElement.getAttribute('data-theme') === 'dark';
     
     // 优化节点标签：智能截断和换行
     chainData.nodes.forEach(node => {
@@ -4313,6 +4314,29 @@ function renderAttackChain(chainData) {
             iconType = 'vulnerability';
         }
 
+        const labelTextColor = isDarkTheme ? '#E5E7EB' : '#0F172A';
+        if (isDarkTheme) {
+            typeColor = '#E5E7EB';
+            bgGradientStart = '#111827';
+            if (nodeType === 'target') {
+                bgGradientEnd = '#1E1B4B';
+            } else if (nodeType === 'action') {
+                bgGradientEnd = accentColor === '#10B981' ? '#052E2B' : '#172033';
+            } else if (nodeType === 'vulnerability') {
+                if (riskScore >= 80) {
+                    bgGradientEnd = '#3F101C';
+                } else if (riskScore >= 60) {
+                    bgGradientEnd = '#3B1D0D';
+                } else if (riskScore >= 40) {
+                    bgGradientEnd = '#3A2A0A';
+                } else {
+                    bgGradientEnd = '#063A36';
+                }
+            } else {
+                bgGradientEnd = '#172033';
+            }
+        }
+
         // 为每个节点生成图标 background-image（data URL）
         const iconSvg = _acBuildNodeIconDataUrl(iconType, accentColor, accentDark);
 
@@ -4345,6 +4369,7 @@ function renderAttackChain(chainData) {
                 accentDark: accentDark,
                 bgGradientStart: bgGradientStart,
                 bgGradientEnd: bgGradientEnd,
+                labelTextColor: labelTextColor,
                 iconDataUrl: iconSvg,
                 badgeText: badgeText,
                 riskScore: riskScore,
@@ -4444,7 +4469,9 @@ function renderAttackChain(chainData) {
                     },
                     'border-opacity': 0.5,
                     // 文字样式
-                    'color': '#0f172a',
+                    'color': function(ele) {
+                        return ele.data('labelTextColor') || '#0f172a';
+                    },
                     'font-size': function(ele) {
                         return isComplexGraph ? '13px' : '14px';
                     },
@@ -5048,7 +5075,7 @@ function showNodeDetails(nodeData) {
         if (nodeData.metadata.ai_analysis) {
             html += `
                 <div class="node-detail-item">
-                    <strong>AI分析:</strong> <div style="margin-top: 5px; padding: 8px; background: #f5f5f5; border-radius: 4px;">${escapeHtml(nodeData.metadata.ai_analysis)}</div>
+                    <strong>AI分析:</strong> <div class="node-detail-ai-analysis">${escapeHtml(nodeData.metadata.ai_analysis)}</div>
                 </div>
             `;
         }

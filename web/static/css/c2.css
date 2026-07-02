@@ -33,6 +33,93 @@
     --c2-mono: 'SF Mono', 'Fira Code', 'JetBrains Mono', 'Cascadia Code', monospace;
 }
 
+html[data-theme="dark"] {
+    --c2-accent: #60a5fa;
+    --c2-accent-hover: #93c5fd;
+    --c2-accent-dim: rgba(96, 165, 250, 0.14);
+    --c2-accent-glow: rgba(96, 165, 250, 0.28);
+    --c2-green: #34d399;
+    --c2-green-dim: rgba(52, 211, 153, 0.14);
+    --c2-red: #f87171;
+    --c2-red-dim: rgba(248, 113, 113, 0.14);
+    --c2-amber: #fbbf24;
+    --c2-amber-dim: rgba(251, 191, 36, 0.14);
+    --c2-purple: #a78bfa;
+    --c2-purple-dim: rgba(167, 139, 250, 0.14);
+    --c2-surface: #111827;
+    --c2-surface-alt: #0b1120;
+    --c2-border: #263244;
+    --c2-border-hover: #3b4a63;
+    --c2-text: #e5e7eb;
+    --c2-text-dim: #a7b0c0;
+    --c2-text-muted: #6b7280;
+    --c2-shadow-sm: 0 1px 3px rgba(0,0,0,0.34);
+    --c2-shadow-md: 0 8px 24px rgba(0,0,0,0.38);
+    --c2-shadow-lg: 0 18px 48px rgba(0,0,0,0.45);
+}
+
+html[data-theme="dark"] .c2-modal,
+html[data-theme="dark"] .c2-modal-content,
+html[data-theme="dark"] .c2-tab-panel--card,
+html[data-theme="dark"] .c2-session-detail,
+html[data-theme="dark"] .c2-payload-card,
+html[data-theme="dark"] .c2-profile-card,
+html[data-theme="dark"] .c2-event-card,
+html[data-theme="dark"] .c2-task-row,
+html[data-theme="dark"] .c2-listener-card {
+    background: var(--c2-surface);
+    color: var(--c2-text);
+    border-color: var(--c2-border);
+}
+
+html[data-theme="dark"] .c2-listener-card:hover,
+html[data-theme="dark"] .c2-payload-card:hover,
+html[data-theme="dark"] .c2-profile-card:hover {
+    border-color: var(--c2-border-hover);
+}
+
+html[data-theme="dark"] .c2-session-chip,
+html[data-theme="dark"] .c2-listener-pill,
+html[data-theme="dark"] .c2-task-type-badge,
+html[data-theme="dark"] .c2-tab-btn {
+    background: var(--c2-surface-alt);
+    border-color: var(--c2-border);
+}
+
+html[data-theme="dark"] #page-c2-listeners,
+html[data-theme="dark"] #page-c2-sessions,
+html[data-theme="dark"] #page-c2-tasks,
+html[data-theme="dark"] #page-c2-payloads,
+html[data-theme="dark"] #page-c2-events,
+html[data-theme="dark"] #page-c2-profiles,
+html[data-theme="dark"] #page-c2-listeners .page-content,
+html[data-theme="dark"] #page-c2-sessions .page-content,
+html[data-theme="dark"] #page-c2-tasks .page-content,
+html[data-theme="dark"] #page-c2-payloads .page-content,
+html[data-theme="dark"] #page-c2-events .page-content,
+html[data-theme="dark"] #page-c2-profiles .page-content,
+html[data-theme="dark"] .c2-session-layout,
+html[data-theme="dark"] .c2-session-main {
+    background: var(--c2-surface-alt) !important;
+}
+
+html[data-theme="dark"] .c2-session-sidebar-wrap,
+html[data-theme="dark"] .c2-sessions-toolbar,
+html[data-theme="dark"] .c2-session-sidebar {
+    background: #0b1120 !important;
+    border-color: var(--c2-border) !important;
+}
+
+html[data-theme="dark"] .c2-session-main-empty {
+    background: transparent !important;
+    color: var(--c2-text-dim) !important;
+}
+
+html[data-theme="dark"] .c2-session-main-empty__icon {
+    background: var(--c2-accent-dim) !important;
+    border-color: rgba(96, 165, 250, 0.35) !important;
+}
+
 /* ============================================================================
    Form Controls (scoped to C2 pages)
    ============================================================================ */
@@ -533,7 +620,7 @@
     min-height: 0;
     overflow: hidden;
     padding: 12px 16px 16px;
-    background: linear-gradient(180deg, #f8fafc 0%, #ffffff 180px);
+    background: linear-gradient(180deg, var(--c2-surface-alt) 0%, var(--c2-surface) 180px);
     display: flex;
     flex-direction: column;
 }
