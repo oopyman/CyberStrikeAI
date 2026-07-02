@@ -207,14 +207,12 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 			return nil, fmt.Errorf("初始化知识库嵌入器失败: %w", err)
 		}
 
-		// 创建检索器
-		retrievalConfig := &knowledge.RetrievalConfig{
-			TopK:                cfg.Knowledge.Retrieval.TopK,
-			SimilarityThreshold: cfg.Knowledge.Retrieval.SimilarityThreshold,
-			SubIndexFilter:      cfg.Knowledge.Retrieval.SubIndexFilter,
-			PostRetrieve:        cfg.Knowledge.Retrieval.PostRetrieve,
-		}
+		// 创建检索器（Eino MultiQuery + 重排流水线）
+		retrievalConfig := knowledge.RetrievalConfigFromYAML(cfg.Knowledge.Retrieval)
 		knowledgeRetriever = knowledge.NewRetriever(knowledgeDB, embedder, retrievalConfig, log.Logger)
+		if err := knowledge.WireRetrieverPipeline(context.Background(), knowledgeRetriever, &cfg.OpenAI); err != nil {
+			return nil, fmt.Errorf("初始化知识库检索流水线失败: %w", err)
+		}
 
 		// 创建索引器（Eino Compose 链）
 		knowledgeIndexer, err = knowledge.NewIndexer(context.Background(), knowledgeDB, embedder, log.Logger, &cfg.Knowledge)
@@ -1800,14 +1798,12 @@ func initializeKnowledge(
 		return nil, fmt.Errorf("初始化知识库嵌入器失败: %w", err)
 	}
 
-	// 创建检索器
-	retrievalConfig := &knowledge.RetrievalConfig{
-		TopK:                cfg.Knowledge.Retrieval.TopK,
-		SimilarityThreshold: cfg.Knowledge.Retrieval.SimilarityThreshold,
-		SubIndexFilter:      cfg.Knowledge.Retrieval.SubIndexFilter,
-		PostRetrieve:        cfg.Knowledge.Retrieval.PostRetrieve,
-	}
+	// 创建检索器（Eino MultiQuery + 重排流水线）
+	retrievalConfig := knowledge.RetrievalConfigFromYAML(cfg.Knowledge.Retrieval)
 	knowledgeRetriever := knowledge.NewRetriever(knowledgeDB, embedder, retrievalConfig, logger)
+	if err := knowledge.WireRetrieverPipeline(context.Background(), knowledgeRetriever, &cfg.OpenAI); err != nil {
+		return nil, fmt.Errorf("初始化知识库检索流水线失败: %w", err)
+	}
 
 	// 创建索引器（Eino Compose 链）
 	knowledgeIndexer, err := knowledge.NewIndexer(context.Background(), knowledgeDB, embedder, logger, &cfg.Knowledge)
