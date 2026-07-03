@@ -231,8 +231,64 @@ async function fetchHitlConversationConfig(conversationId) {
     if (!data || !data.hitl) return null;
     return {
         hitl: data.hitl,
+        defaultReviewer: hitlReviewerNormalize(data.defaultReviewer || 'human'),
         hitlGlobalToolWhitelist: Array.isArray(data.hitlGlobalToolWhitelist) ? data.hitlGlobalToolWhitelist : []
     };
+}
+
+function applyHitlDefaultReviewerFromServer(reviewer) {
+    const v = hitlReviewerNormalize(reviewer);
+    if (typeof window !== 'undefined') {
+        window.csaiHitlDefaultReviewer = v;
+    }
+    if (typeof window.saveHitlLastGlobalConfig === 'function' && typeof window.getHitlLastGlobalConfig === 'function') {
+        const gl = window.getHitlLastGlobalConfig();
+        const base = gl && typeof gl === 'object'
+            ? gl
+            : { mode: 'off', sensitiveTools: '', updatedAt: '' };
+        window.saveHitlLastGlobalConfig(Object.assign({}, base, {
+            reviewer: v,
+            updatedAt: new Date().toISOString()
+        }));
+    }
+    return v;
+}
+
+async function fetchHitlDefaultReviewer() {
+    const resp = await hitlApiFetch('/api/hitl/default-reviewer', { credentials: 'same-origin' });
+    if (!resp.ok) {
+        return applyHitlDefaultReviewerFromServer('human');
+    }
+    const data = await resp.json();
+    return applyHitlDefaultReviewerFromServer(data && data.defaultReviewer);
+}
+
+async function putHitlDefaultReviewer(reviewer) {
+    const normalized = hitlReviewerNormalize(reviewer);
+    const resp = await hitlApiFetch('/api/hitl/default-reviewer', {
+        method: 'PUT',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reviewer: normalized })
+    });
+    if (!resp.ok) {
+        const msg = await readHitlApiError(resp);
+        throw new Error(msg || ('HTTP ' + resp.status));
+    }
+    const data = await resp.json();
+    return applyHitlDefaultReviewerFromServer(data && data.defaultReviewer);
+}
+
+async function initHitlDefaultReviewerFromServer() {
+    try {
+        await fetchHitlDefaultReviewer();
+        if (!getCurrentConversationIdForHitl() && typeof window.refreshHitlConfigByCurrentConversation === 'function') {
+            window.refreshHitlConfigByCurrentConversation();
+        }
+        refreshHitlPageReviewerBar();
+    } catch (e) {
+        console.warn('initHitlDefaultReviewerFromServer', e);
+    }
 }
 
 /** 无会话时：将免审批工具合并进服务端 config.yaml，返回更新后的全局白名单数组 */
@@ -462,6 +518,9 @@ async function syncHitlConfigFromServer(conversationId) {
     const pack = await fetchHitlConversationConfig(conversationId);
     if (!pack || !pack.hitl) return;
     const cfg = pack.hitl;
+    if (pack.defaultReviewer) {
+        applyHitlDefaultReviewerFromServer(pack.defaultReviewer);
+    }
     const globalWL = pack.hitlGlobalToolWhitelist || [];
     if (typeof window !== 'undefined') {
         window.csaiHitlGlobalToolWhitelist = globalWL;
@@ -1460,6 +1519,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (typeof window.bindHitlReviewerToggleListeners === 'function') {
         window.bindHitlReviewerToggleListeners();
     }
+    initHitlDefaultReviewerFromServer();
     setTimeout(reconcileHitlUiState, 0);
 });
 
@@ -1478,3 +1538,5 @@ window.mergeHitlGlobalToolWhitelist = mergeHitlGlobalToolWhitelist;
 
 // 由 chat.js 在 loadConversation 内 await 调用；挂到 window 供其它入口显式触发
 window.syncHitlConfigFromServer = syncHitlConfigFromServer;
+window.fetchHitlDefaultReviewer = fetchHitlDefaultReviewer;
+window.putHitlDefaultReviewer = putHitlDefaultReviewer;

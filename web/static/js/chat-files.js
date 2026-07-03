@@ -84,6 +84,7 @@ function initChatFilesPage() {
             /* ignore */
         }
     }
+    setupChatFilesDragDrop();
     loadChatFilesPage();
 }
 
@@ -1226,21 +1227,31 @@ function chatFilesUploadToFolderClick(ev, btn) {
     if (inp) inp.click();
 }
 
-async function onChatFilesUploadPick(ev) {
-    const input = ev.target;
-    const file = input && input.files && input.files[0];
-    if (!file) return;
-    const form = new FormData();
-    form.append('file', file);
+function chatFilesResolveUploadTarget() {
     const pendingDir = chatFilesPendingUploadDir;
     chatFilesPendingUploadDir = '';
     if (pendingDir) {
-        form.append('relativeDir', pendingDir);
-    } else {
-        const conv = document.getElementById('chat-files-filter-conv');
-        if (conv && conv.value.trim()) {
-            form.append('conversationId', conv.value.trim());
-        }
+        return { relativeDir: pendingDir };
+    }
+    if (chatFilesGetGroupByMode() === 'folder') {
+        const dir = chatFilesBrowsePath.join('/');
+        return dir ? { relativeDir: dir } : {};
+    }
+    const conv = document.getElementById('chat-files-filter-conv');
+    if (conv && conv.value.trim()) {
+        return { conversationId: conv.value.trim() };
+    }
+    return {};
+}
+
+async function chatFilesUploadFile(file, target) {
+    if (!file || chatFilesXHRUploadBusy) return false;
+    const form = new FormData();
+    form.append('file', file);
+    if (target && target.relativeDir) {
+        form.append('relativeDir', target.relativeDir);
+    } else if (target && target.conversationId) {
+        form.append('conversationId', target.conversationId);
     }
     chatFilesSetUploadBusy(true);
     chatFilesSetUploadProgressUI(true, 0, file.name);
@@ -1265,13 +1276,73 @@ async function onChatFilesUploadPick(ev) {
                 : '上传成功。在列表中点击「复制路径」即可粘贴到对话中引用。';
             chatFilesShowToast(msg);
         }
+        return true;
     } catch (e) {
         alert((e && e.message) ? e.message : String(e));
+        return false;
     } finally {
         chatFilesSetUploadBusy(false);
         chatFilesSetUploadProgressUI(false);
+    }
+}
+
+async function chatFilesUploadFiles(fileList) {
+    if (!fileList || !fileList.length || chatFilesXHRUploadBusy) return;
+    const files = Array.from(fileList).filter(function (f) {
+        return f && (f.name || f.size > 0);
+    });
+    if (!files.length) return;
+    const target = chatFilesResolveUploadTarget();
+    for (let i = 0; i < files.length; i++) {
+        const ok = await chatFilesUploadFile(files[i], target);
+        if (!ok) break;
+    }
+}
+
+async function onChatFilesUploadPick(ev) {
+    const input = ev.target;
+    const files = input && input.files;
+    if (!files || !files.length) return;
+    try {
+        await chatFilesUploadFiles(files);
+    } finally {
         input.value = '';
     }
+}
+
+let chatFilesDragDropBound = false;
+
+function setupChatFilesDragDrop() {
+    if (chatFilesDragDropBound) return;
+    const wrap = document.getElementById('chat-files-list-wrap');
+    if (!wrap) return;
+    chatFilesDragDropBound = true;
+
+    wrap.addEventListener('dragover', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (chatFilesXHRUploadBusy) return;
+        this.classList.add('drag-over');
+    });
+    wrap.addEventListener('dragleave', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!this.contains(e.relatedTarget)) {
+            this.classList.remove('drag-over');
+        }
+    });
+    wrap.addEventListener('drop', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.classList.remove('drag-over');
+        if (chatFilesXHRUploadBusy) return;
+        const files = e.dataTransfer && e.dataTransfer.files;
+        if (files && files.length) {
+            chatFilesUploadFiles(files).catch(function (err) {
+                if (err) alert((err && err.message) ? err.message : String(err));
+            });
+        }
+    });
 }
 
 // 语言切换后重新渲染列表：表头与「更多」菜单由 JS 拼接，无 data-i18n，需用当前语言的 t() 再生成一遍

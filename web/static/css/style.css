@@ -2750,6 +2750,19 @@ html[data-theme="dark"] .openapi-doc-btn:hover {
     flex-shrink: 0;
 }
 
+.message-avatar svg {
+    width: 17px;
+    height: 17px;
+    flex-shrink: 0;
+}
+
+.message-avatar-img {
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    object-fit: contain;
+}
+
 .message.user .message-avatar {
     background: var(--accent-color);
     color: white;
@@ -20943,8 +20956,17 @@ tr.mcp-stats-tool-row[data-tool-name]:focus-visible {
 }
 
 .vulnerability-header:hover {
-    background-color: var(--bg-secondary);
-    border-radius: 4px;
+    background-color: rgba(0, 102, 255, 0.04);
+    border-radius: 6px;
+}
+
+html[data-theme="dark"] .vulnerability-header:hover {
+    background-color: rgba(96, 165, 250, 0.08);
+}
+
+html[data-theme="dark"] .vulnerability-card:hover {
+    border-color: #334155;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.22);
 }
 
 .vulnerability-title-section {
@@ -23750,6 +23772,12 @@ tr.mcp-stats-tool-row[data-tool-name]:focus-visible {
     border-radius: 8px;
 }
 
+.chat-files-table-wrap.drag-over {
+    background: rgba(0, 102, 255, 0.06);
+    outline: 2px dashed rgba(0, 102, 255, 0.35);
+    outline-offset: -2px;
+}
+
 /* 分组视图：外层不再套一层大边框，由各分组卡片承担 */
 .chat-files-table-wrap.chat-files-table-wrap--grouped {
     border: none;
@@ -24049,7 +24077,13 @@ tr.mcp-stats-tool-row[data-tool-name]:focus-visible {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    vertical-align: bottom;
+    vertical-align: middle;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 .chat-files-cell-subpath {
@@ -24181,7 +24215,8 @@ button.chat-files-dropdown-item:hover:not(:disabled) {
 }
 
 /* 文件管理：重命名 / 新建文件夹 — 紧凑表单弹窗，无全局紫色标题条 */
-.chat-files-form-modal {
+/* display 由 .modal（默认 none）与 openAppModal 内联 flex 控制，勿在此写 display:flex */
+.modal.chat-files-form-modal {
     align-items: center;
     justify-content: center;
     padding: 24px 16px;
@@ -24310,18 +24345,19 @@ button.chat-files-dropdown-item:hover:not(:disabled) {
 
 .chat-files-toast {
     position: fixed;
-    z-index: 1100;
+    z-index: 10100;
     bottom: 28px;
     left: 50%;
     transform: translateX(-50%) translateY(12px);
     max-width: min(520px, calc(100vw - 32px));
     padding: 12px 18px;
-    background: var(--text-primary, #1a1a1a);
-    color: #fff;
+    background: #111827;
+    color: #f1f5f9;
+    border: 1px solid #334155;
     border-radius: 8px;
     font-size: 0.875rem;
     line-height: 1.45;
-    box-shadow: var(--shadow-lg);
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.28);
     opacity: 0;
     transition: opacity 0.25s ease, transform 0.25s ease;
     pointer-events: none;
@@ -24335,6 +24371,21 @@ button.chat-files-dropdown-item:hover:not(:disabled) {
 
 .chat-files-toast.chat-toast--error {
     background: #b91c1c;
+    color: #fff;
+    border-color: #991b1b;
+}
+
+html[data-theme="dark"] .chat-files-toast {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border-color: var(--border-color);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+}
+
+html[data-theme="dark"] .chat-files-toast.chat-toast--error {
+    background: #991b1b;
+    color: #fecaca;
+    border-color: #b91c1c;
 }
 
 /* 对话附件读取 / 文件管理上传 进度条 */
@@ -27566,6 +27617,12 @@ html[data-theme="dark"] .chat-files-table tr:hover td {
     background: rgba(96, 165, 250, 0.08);
 }
 
+html[data-theme="dark"] .chat-files-cell-conv code {
+    background: var(--bg-secondary) !important;
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+}
+
 html[data-theme="dark"] code,
 html[data-theme="dark"] pre,
 html[data-theme="dark"] .code-block,
@@ -27610,6 +27667,33 @@ html[data-theme="dark"] .message-copy-btn:active {
 html[data-theme="dark"] .message.user .message-bubble {
     background: linear-gradient(135deg, #2563eb 0%, #4f46e5 100%);
     color: #ffffff;
+}
+
+html[data-theme="dark"] .message-avatar {
+    border-radius: 50%;
+}
+
+html[data-theme="dark"] .message.user .message-avatar {
+    background: linear-gradient(135deg, #2563eb 0%, #4f46e5 100%);
+    color: #ffffff;
+    box-shadow:
+        0 0 0 2px rgba(96, 165, 250, 0.22),
+        0 2px 10px rgba(37, 99, 235, 0.38);
+    border: none;
+}
+
+html[data-theme="dark"] .message.assistant .message-avatar {
+    background: linear-gradient(145deg, #1e293b 0%, #0f172a 100%);
+    color: var(--text-secondary);
+    border: 1px solid rgba(96, 165, 250, 0.28);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.32);
+    padding: 3px;
+}
+
+html[data-theme="dark"] .message.assistant .message-avatar-img {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
 }
 
 html[data-theme="dark"] .message.system .message-bubble,
@@ -28158,7 +28242,6 @@ html[data-theme="dark"] .hitl-page-tab--active {
 html[data-theme="dark"] .hitl-page-reviewer-label,
 html[data-theme="dark"] .hitl-page-whitelist-label,
 html[data-theme="dark"] .hitl-page-strategy-label,
-html[data-theme="dark"] .hitl-pending-item-title,
 html[data-theme="dark"] .hitl-log-detail-row dd,
 html[data-theme="dark"] .projects-sidebar-title,
 html[data-theme="dark"] .projects-list-item-name,
@@ -28310,6 +28393,79 @@ html[data-theme="dark"] .webshell-db-count {
     background: rgba(96, 165, 250, 0.12) !important;
     color: #bfdbfe !important;
     border-color: rgba(96, 165, 250, 0.24) !important;
+}
+
+html[data-theme="dark"] .hitl-tool-badge {
+    background: linear-gradient(135deg, #2563eb 0%, #4f46e5 100%) !important;
+    color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
+}
+
+html[data-theme="dark"] .hitl-mode-tag {
+    background: rgba(96, 165, 250, 0.14) !important;
+    color: #93c5fd !important;
+    border: 1px solid rgba(96, 165, 250, 0.28) !important;
+    -webkit-text-fill-color: #93c5fd !important;
+}
+
+html[data-theme="dark"] .hitl-mode-tag--review_edit {
+    background: rgba(251, 191, 36, 0.14) !important;
+    color: #fde68a !important;
+    border-color: rgba(251, 191, 36, 0.28) !important;
+    -webkit-text-fill-color: #fde68a !important;
+}
+
+html[data-theme="dark"] .hitl-pending-meta {
+    color: var(--text-muted) !important;
+}
+
+html[data-theme="dark"] .hitl-context-label {
+    color: var(--text-secondary) !important;
+}
+
+html[data-theme="dark"] .hitl-context-block--execution .hitl-context-text {
+    background: rgba(52, 211, 153, 0.08) !important;
+    border-color: rgba(52, 211, 153, 0.28) !important;
+    color: var(--text-primary) !important;
+}
+
+html[data-theme="dark"] .hitl-pending-actions {
+    border-top-color: #263244 !important;
+}
+
+html[data-theme="dark"] .hitl-inline-approval {
+    background: rgba(96, 165, 250, 0.08) !important;
+    border-color: rgba(96, 165, 250, 0.22) !important;
+}
+
+html[data-theme="dark"] .hitl-apply-feedback {
+    background: rgba(52, 211, 153, 0.12) !important;
+    color: #6ee7b7 !important;
+    border-color: rgba(52, 211, 153, 0.28) !important;
+}
+
+html[data-theme="dark"] .hitl-apply-feedback.hitl-apply-feedback--error {
+    background: rgba(248, 113, 113, 0.12) !important;
+    color: #fca5a5 !important;
+    border-color: rgba(248, 113, 113, 0.28) !important;
+}
+
+html[data-theme="dark"] .hitl-apply-feedback.hitl-apply-feedback--partial {
+    background: rgba(251, 191, 36, 0.12) !important;
+    color: #fde68a !important;
+    border-color: rgba(251, 191, 36, 0.28) !important;
+}
+
+html[data-theme="dark"] .hitl-decision-tag.hitl-decision--approve {
+    background: rgba(52, 211, 153, 0.14) !important;
+    color: #6ee7b7 !important;
+    border: 1px solid rgba(52, 211, 153, 0.28) !important;
+}
+
+html[data-theme="dark"] .hitl-decision-tag.hitl-decision--reject {
+    background: rgba(248, 113, 113, 0.14) !important;
+    color: #fca5a5 !important;
+    border: 1px solid rgba(248, 113, 113, 0.28) !important;
 }
 
 html[data-theme="dark"] #page-projects .projects-graph-stat-badge {

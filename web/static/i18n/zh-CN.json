@@ -671,7 +671,7 @@
   "hitl": {
     "pageTitle": "人机协同审批",
     "pageReviewerLabel": "当前审批方",
-    "pageReviewerHint": "作用于当前选中会话；未选会话时保存到本机，新建会话时沿用。切换后立即生效。",
+    "pageReviewerHint": "作用于当前选中会话；未选会话时写入 config.yaml 作为全局默认，新建会话时沿用。切换后立即生效。",
     "pageReviewerSaved": "审批方已保存。",
     "whitelistLabel": "免审批工具白名单",
     "whitelistHint": "每行一个或逗号分隔；保存后写入 config.yaml 全局白名单并立即生效（与聊天侧栏同步展示）。",
@@ -1903,7 +1903,7 @@
   },
   "chatFilesPage": {
     "title": "文件管理",
-    "intro": "管理在对话中上传的文件。需要让 AI 引用某文件时，在列表中点击「复制路径」，到对话里粘贴即可（路径为服务器上的绝对路径，与对话附件保存位置一致）。",
+    "intro": "管理在对话中上传的文件。可将文件拖拽到下方列表区域，或点击「上传文件」选择文件（支持多选）。需要让 AI 引用某文件时，在列表中点击「复制路径」，到对话里粘贴即可（路径为服务器上的绝对路径，与对话附件保存位置一致）。",
     "upload": "上传文件",
     "conversationFilter": "会话 ID",
     "conversationPlaceholder": "留空表示全部",

@@ -2290,12 +2290,12 @@
                         <h2 data-i18n="chatFilesPage.title">文件管理</h2>
                         <div class="page-header-actions">
                             <button type="button" class="btn-primary" id="chat-files-header-upload-btn" onclick="chatFilesOpenUploadPicker()" data-i18n="chatFilesPage.upload">上传文件</button>
-                            <input type="file" id="chat-files-upload-input" style="display:none" onchange="onChatFilesUploadPick(event)" />
+                            <input type="file" id="chat-files-upload-input" style="display:none" multiple onchange="onChatFilesUploadPick(event)" />
                             <button type="button" class="btn-secondary" id="chat-files-refresh-btn" onclick="loadChatFilesPage()" data-i18n="common.refresh">刷新</button>
                         </div>
                     </div>
                     <div class="page-content">
-                        <p class="chat-files-intro" data-i18n="chatFilesPage.intro">管理在对话中上传的文件。需要让 AI 引用某文件时，在列表中点击「复制路径」，到对话里粘贴即可。</p>
+                        <p class="chat-files-intro" data-i18n="chatFilesPage.intro">管理在对话中上传的文件。可将文件拖拽到下方列表区域，或点击「上传文件」选择文件（支持多选）。需要让 AI 引用某文件时，在列表中点击「复制路径」，到对话里粘贴即可。</p>
                         <div class="tasks-filters chat-files-filters">
                             <label>
                                 <span data-i18n="chatFilesPage.conversationFilter">会话 ID</span>

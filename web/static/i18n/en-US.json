@@ -683,7 +683,7 @@
   "hitl": {
     "pageTitle": "HITL approvals",
     "pageReviewerLabel": "Current reviewer",
-    "pageReviewerHint": "Applies to the selected conversation. Without a conversation, saved locally for new chats. Takes effect immediately.",
+    "pageReviewerHint": "Applies to the selected conversation. Without a conversation, saved to config.yaml as the global default for new chats. Takes effect immediately.",
     "pageReviewerSaved": "Reviewer saved.",
     "whitelistLabel": "Tool whitelist (no approval)",
     "whitelistHint": "One per line or comma-separated. Saved to config.yaml global whitelist and takes effect immediately (synced with chat sidebar).",
@@ -1915,7 +1915,7 @@
   },
   "chatFilesPage": {
     "title": "File Management",
-    "intro": "Files uploaded in chat appear here. Click “Copy path” to copy the server absolute path and paste it into a conversation so the model can reference the file.",
+    "intro": "Files uploaded in chat appear here. Drag files into the list below, or click Upload to pick files (multiple allowed). Click “Copy path” to copy the server absolute path and paste it into a conversation so the model can reference the file.",
     "upload": "Upload",
     "conversationFilter": "Conversation ID",
     "conversationPlaceholder": "Leave empty for all",

@@ -137,9 +137,12 @@ function normalizeHitlMode(mode) {
 }
 
 function defaultHitlConfig() {
+    const serverReviewer = (typeof window !== 'undefined' && window.csaiHitlDefaultReviewer)
+        ? window.csaiHitlDefaultReviewer
+        : 'human';
     return {
         mode: HITL_MODE_OFF,
-        reviewer: 'human',
+        reviewer: normalizeHitlReviewer(serverReviewer),
         sensitiveTools: '',
         updatedAt: ''
     };
@@ -315,16 +318,18 @@ async function onHitlReviewerChanged(reviewer) {
     const cfg = readHitlConfigFromForm();
     const cid = typeof currentConversationId === 'string' ? currentConversationId.trim() : '';
     saveHitlConfigForConversation(cid, cfg, { syncGlobalLast: true });
-    if (cid && typeof window.saveHitlConversationConfig === 'function') {
-        try {
+    try {
+        if (cid && typeof window.saveHitlConversationConfig === 'function') {
             await window.saveHitlConversationConfig(cid, cfg);
-            const ok = typeof window.t === 'function' ? window.t('hitl.pageReviewerSaved') : '审批方已保存。';
-            showChatToast(ok, 'success');
-        } catch (e) {
-            console.warn('onHitlReviewerChanged', e);
-            const prefix = typeof window.t === 'function' ? window.t('chat.hitlApplyFail') : '同步到服务器失败';
-            showChatToast(prefix, 'error');
+        } else if (typeof window.putHitlDefaultReviewer === 'function') {
+            await window.putHitlDefaultReviewer(cfg.reviewer);
         }
+        const ok = typeof window.t === 'function' ? window.t('hitl.pageReviewerSaved') : '审批方已保存。';
+        showChatToast(ok, 'success');
+    } catch (e) {
+        console.warn('onHitlReviewerChanged', e);
+        const prefix = typeof window.t === 'function' ? window.t('chat.hitlApplyFail') : '同步到服务器失败';
+        showChatToast(prefix, 'error');
     }
 }
 
@@ -507,6 +512,7 @@ function chatAgentModeNormalizeStored(stored, cfg) {
 
 if (typeof window !== 'undefined') {
     window.csaiHitlGlobalToolWhitelist = window.csaiHitlGlobalToolWhitelist || [];
+    window.csaiHitlDefaultReviewer = window.csaiHitlDefaultReviewer || 'human';
     window.csaiChatAgentMode = {
         EINO_MODES: CHAT_AGENT_EINO_MODES,
         EINO_SINGLE: CHAT_AGENT_MODE_EINO_SINGLE,
@@ -518,6 +524,7 @@ if (typeof window !== 'undefined') {
     window.applyHitlSidebarConfig = applyHitlSidebarConfig;
     window.readHitlConfigFromForm = readHitlConfigFromForm;
     window.applyHitlConfigToUI = applyHitlConfigToUI;
+    window.refreshHitlConfigByCurrentConversation = refreshHitlConfigByCurrentConversation;
     window.saveHitlConfigForConversation = saveHitlConfigForConversation;
     window.getHitlConfigForConversation = getHitlConfigForConversation;
     bindHitlSidebarModeListener();
@@ -2020,6 +2027,19 @@ function refreshSystemReadyMessageBubbles() {
     });
 }
 
+function createMessageAvatar(role) {
+    const avatar = document.createElement('div');
+    avatar.className = 'message-avatar';
+    if (role === 'user') {
+        avatar.innerHTML = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="7" r="4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    } else if (role === 'assistant') {
+        avatar.innerHTML = '<img src="/static/logo.png" alt="" class="message-avatar-img">';
+    } else {
+        avatar.textContent = 'S';
+    }
+    return avatar;
+}
+
 // 添加消息（options.systemReadyMessage 为 true 时，语言切换会刷新该条文案）
 function addMessage(role, content, mcpExecutionIds = null, progressId = null, createdAt = null, options = null) {
     const messagesDiv = document.getElementById('chat-messages');
@@ -2030,16 +2050,7 @@ function addMessage(role, content, mcpExecutionIds = null, progressId = null, cr
     messageDiv.className = 'message ' + role;
     
     // 创建头像
-    const avatar = document.createElement('div');
-    avatar.className = 'message-avatar';
-    if (role === 'user') {
-        avatar.textContent = 'U';
-    } else if (role === 'assistant') {
-        avatar.textContent = 'A';
-    } else {
-        avatar.textContent = 'S';
-    }
-    messageDiv.appendChild(avatar);
+    messageDiv.appendChild(createMessageAvatar(role));
     
     // 创建消息内容容器
     const contentWrapper = document.createElement('div');
