@@ -2411,6 +2411,15 @@ function processDetailRowFingerprint(d) {
     return et + '\0' + msg + '\0' + dataKey;
 }
 
+function compactWorkflowProcessDetails(details) {
+    if (!Array.isArray(details) || details.length === 0) return details || [];
+    return details.filter((detail) => {
+        const eventType = detail && detail.eventType ? String(detail.eventType) : '';
+        // workflow_node_start 已经表达了节点进入；这些事件只用于实时状态，落到详情里会让 Agent 节点看起来重复启动。
+        return eventType !== 'workflow_agent_start';
+    });
+}
+
 // 渲染过程详情
 // options.append=true 时分页追加；options.markLoaded=false 时保留 lazy 标记（分页加载中）
 function renderProcessDetails(messageId, processDetails, options) {
@@ -2502,6 +2511,7 @@ function renderProcessDetails(messageId, processDetails, options) {
     if (typeof window.coalesceProcessDetailsToolPairs === 'function') {
         processDetails = window.coalesceProcessDetailsToolPairs(processDetails);
     }
+    processDetails = compactWorkflowProcessDetails(processDetails);
     // 如果没有processDetails或为空，显示空状态
     if (!processDetails || processDetails.length === 0) {
         if (!appendMode) {
@@ -2529,7 +2539,40 @@ function renderProcessDetails(messageId, processDetails, options) {
         const agPx = processDetailAgentPrefix(data);
         
         let itemTitle = title;
-        if (eventType === 'iteration') {
+        if (eventType === 'workflow_start') {
+            const name = data.workflowName || data.workflowId || '';
+            itemTitle = '🧭 工作流开始' + (name ? (' · ' + name) : '');
+        } else if (eventType === 'workflow_done') {
+            const name = data.workflowName || data.workflowId || '';
+            itemTitle = '✅ 工作流完成' + (name ? (' · ' + name) : '');
+        } else if (eventType === 'workflow_node_start') {
+            const label = data.label || title || data.nodeId || '';
+            itemTitle = '▶ 节点开始' + (label ? (' · ' + label) : '');
+        } else if (eventType === 'workflow_node_result') {
+            const label = data.label || data.nodeId || '';
+            const status = data.status || '';
+            const nodeType = data.nodeType != null ? String(data.nodeType).toLowerCase() : '';
+            if (nodeType === 'condition') {
+                const matched = data.matched === true || data.matched === 'true' || (data.output && (data.output.matched === true || data.output.matched === 'true'));
+                itemTitle = (matched ? '✅' : '🔀') + ' 条件判断' + (label ? (' · ' + label) : '') + ' → ' + (matched ? '是' : '否');
+            } else {
+                const icon = status === 'failed' ? '❌' : (status === 'skipped' ? '⏭️' : '✅');
+                itemTitle = icon + ' 节点完成' + (label ? (' · ' + label) : '') + (status ? ('（' + status + '）') : '');
+            }
+        } else if (eventType === 'workflow_branch_taken' || eventType === 'workflow_branch_skipped') {
+            const branch = data.branchLabel || '';
+            const target = data.targetLabel || data.targetId || '';
+            const taken = eventType === 'workflow_branch_taken';
+            itemTitle = (taken ? '➡️' : '⏭️') + (taken ? ' 执行分支' : ' 跳过分支') + (branch ? (' · ' + branch) : '') + (target ? (' → ' + target) : '');
+        } else if (eventType === 'workflow_tool_start') {
+            const tool = data.tool || data.toolName || '';
+            itemTitle = '🔧 工具节点' + (tool ? (' · ' + tool) : '');
+        } else if (eventType === 'workflow_agent_output') {
+            const label = data.label || data.nodeId || '';
+            itemTitle = '🤖 Agent 输出' + (label ? (' · ' + label) : '');
+        } else if (eventType === 'workflow_hitl_checkpoint') {
+            itemTitle = '🧑‍⚖️ 人工确认检查点';
+        } else if (eventType === 'iteration') {
             const n = data.iteration || 1;
             if (data.orchestration === 'plan_execute' && data.einoScope === 'main') {
                 const phase = typeof window.translatePlanExecuteAgentName === 'function'

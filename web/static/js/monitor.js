@@ -333,6 +333,19 @@ const responseStreamStateByProgressId = new Map();
 // 主通道当前迭代轮次缓存：progressId -> { iteration, orchestration }
 const mainIterationStateByProgressId = new Map();
 
+/** 图编排多 Agent 节点切换时清空流式聚合，避免推理/输出条目覆盖上一节点内容 */
+function clearTimelineStreamStates(progressId) {
+    responseStreamStateByProgressId.delete(progressId);
+    thinkingStreamStateByProgressId.delete(progressId);
+    einoAgentReplyStreamStateByProgressId.delete(progressId);
+    const prefix = String(progressId) + '::';
+    for (const key of Array.from(toolResultStreamStateByKey.keys())) {
+        if (String(key).startsWith(prefix)) {
+            toolResultStreamStateByKey.delete(key);
+        }
+    }
+}
+
 /** 同一段主通道流式输出（Eino 可能重复 response_start） */
 function sameMainResponseStreamMeta(a, b) {
     if (!a || !b) return false;
@@ -341,7 +354,10 @@ function sameMainResponseStreamMeta(a, b) {
     if (!agentA || agentA !== agentB) return false;
     const orchA = String(a.orchestration != null ? a.orchestration : '').trim();
     const orchB = String(b.orchestration != null ? b.orchestration : '').trim();
-    return orchA === orchB;
+    if (orchA !== orchB) return false;
+    const nodeA = String(a.workflowNodeId != null ? a.workflowNodeId : '').trim();
+    const nodeB = String(b.workflowNodeId != null ? b.workflowNodeId : '').trim();
+    return nodeA === nodeB;
 }
 
 function resolveMainIterationTag(progressId, responseData) {
@@ -366,7 +382,8 @@ function buildMainResponseStreamIdentity(progressId, responseData) {
     const agent = String(d.einoAgent != null ? d.einoAgent : '').trim();
     const orch = String(d.orchestration != null ? d.orchestration : '').trim();
     const iterTag = resolveMainIterationTag(progressId, d);
-    return agent + '|' + orch + '|iter=' + iterTag;
+    const nodeId = String(d.workflowNodeId != null ? d.workflowNodeId : '').trim();
+    return agent + '|' + orch + '|iter=' + iterTag + '|wfNode=' + nodeId;
 }
 
 function extractIterationTagFromStreamIdentity(identity) {
@@ -1747,13 +1764,18 @@ function handleStreamEvent(event, progressElement, progressId,
             if (scope !== 'sub') {
                 const prevMainIter = mainIterationStateByProgressId.get(String(progressId));
                 const prevN = prevMainIter && prevMainIter.iteration != null ? prevMainIter.iteration : null;
+                const prevNode = prevMainIter && prevMainIter.workflowNodeId != null
+                    ? String(prevMainIter.workflowNodeId).trim()
+                    : '';
+                const curNode = d.workflowNodeId != null ? String(d.workflowNodeId).trim() : '';
                 mainIterationStateByProgressId.set(String(progressId), {
                     iteration: n,
-                    orchestration: d.orchestration != null ? d.orchestration : ''
+                    orchestration: d.orchestration != null ? d.orchestration : '',
+                    workflowNodeId: curNode
                 });
-                // 主通道进入新轮次后不复用上一轮的「执行输出」时间线条目
-                if (prevN != null && prevN !== n) {
-                    responseStreamStateByProgressId.delete(progressId);
+                // 主通道进入新轮次或图编排切换到新 Agent 节点后，不复用上一段的流式时间线条目
+                if (prevN != null && (n < prevN || prevN !== n || (curNode && prevNode && curNode !== prevNode))) {
+                    clearTimelineStreamStates(progressId);
                 }
             }
             let iterTitle;
@@ -1781,6 +1803,109 @@ function handleStreamEvent(event, progressElement, progressId,
                 message: event.message,
                 data: event.data,
                 iterationN: n
+            });
+            break;
+        }
+
+        case 'workflow_start': {
+            const d = event.data || {};
+            const name = d.workflowName || d.workflowId || '';
+            addTimelineItem(timeline, 'workflow_start', {
+                title: '🧭 工作流开始' + (name ? (' · ' + name) : ''),
+                message: event.message || '',
+                data: d
+            });
+            break;
+        }
+
+        case 'workflow_done': {
+            const d = event.data || {};
+            const name = d.workflowName || d.workflowId || '';
+            addTimelineItem(timeline, 'workflow_done', {
+                title: '✅ 工作流完成' + (name ? (' · ' + name) : ''),
+                message: event.message || '',
+                data: d
+            });
+            break;
+        }
+
+        case 'workflow_node_start': {
+            const d = event.data || {};
+            const label = d.label || d.nodeId || '';
+            const nodeType = d.nodeType != null ? String(d.nodeType).toLowerCase() : '';
+            if (nodeType === 'agent') {
+                clearTimelineStreamStates(progressId);
+            }
+            addTimelineItem(timeline, 'workflow_node_start', {
+                title: '▶ 节点开始' + (label ? (' · ' + label) : ''),
+                message: event.message || '',
+                data: d
+            });
+            break;
+        }
+
+        case 'workflow_node_result': {
+            const d = event.data || {};
+            const label = d.label || d.nodeId || '';
+            const status = d.status || '';
+            const nodeType = d.nodeType != null ? String(d.nodeType).toLowerCase() : '';
+            let title;
+            if (nodeType === 'condition') {
+                const matched = d.matched === true || d.matched === 'true' || (d.output && (d.output.matched === true || d.output.matched === 'true'));
+                title = (matched ? '✅' : '🔀') + ' 条件判断' + (label ? (' · ' + label) : '') + ' → ' + (matched ? '是' : '否');
+            } else {
+                const icon = status === 'failed' ? '❌' : (status === 'skipped' ? '⏭️' : '✅');
+                title = icon + ' 节点完成' + (label ? (' · ' + label) : '') + (status ? ('（' + status + '）') : '');
+            }
+            addTimelineItem(timeline, 'workflow_node_result', {
+                title: title,
+                message: event.message || '',
+                data: d
+            });
+            break;
+        }
+
+        case 'workflow_branch_taken':
+        case 'workflow_branch_skipped': {
+            const d = event.data || {};
+            const branch = d.branchLabel || '';
+            const target = d.targetLabel || d.targetId || '';
+            const taken = event.type === 'workflow_branch_taken';
+            addTimelineItem(timeline, event.type, {
+                title: (taken ? '➡️' : '⏭️') + (taken ? ' 执行分支' : ' 跳过分支') + (branch ? (' · ' + branch) : '') + (target ? (' → ' + target) : ''),
+                message: event.message || '',
+                data: d
+            });
+            break;
+        }
+
+        case 'workflow_tool_start': {
+            const d = event.data || {};
+            const tool = d.tool || d.toolName || '';
+            addTimelineItem(timeline, 'workflow_tool_start', {
+                title: '🔧 工具节点' + (tool ? (' · ' + tool) : ''),
+                message: event.message || '',
+                data: d
+            });
+            break;
+        }
+
+        case 'workflow_agent_output': {
+            const d = event.data || {};
+            const label = d.label || d.nodeId || '';
+            addTimelineItem(timeline, 'workflow_agent_output', {
+                title: '🤖 Agent 输出' + (label ? (' · ' + label) : ''),
+                message: event.message || '',
+                data: d
+            });
+            break;
+        }
+
+        case 'workflow_hitl_checkpoint': {
+            addTimelineItem(timeline, 'workflow_hitl_checkpoint', {
+                title: '🧑‍⚖️ 人工确认检查点',
+                message: event.message || '',
+                data: event.data || {}
             });
             break;
         }
@@ -3262,6 +3387,34 @@ function updateToolCallStatus(progressId, toolCallId, status) {
 }
 
 // 添加时间线项目
+function buildWorkflowConditionResultHtml(data) {
+    const output = (data && data.output) || {};
+    const expr = (data && data.expression) || output.condition || '';
+    const matched = (data && (data.matched === true || data.matched === 'true'))
+        || output.matched === true || output.matched === 'true';
+    const branchText = matched ? '是（true）' : '否（false）';
+    const branchClass = matched ? 'is-true' : 'is-false';
+    return `<div class="timeline-item-content workflow-condition-result">
+        <div class="workflow-condition-row">
+            <span class="workflow-agent-io-label">表达式</span>
+            <code>${escapeHtml(String(expr || '（空）'))}</code>
+        </div>
+        <div class="workflow-condition-row">
+            <span class="workflow-agent-io-label">结果</span>
+            <span class="workflow-condition-branch ${branchClass}">${escapeHtml(branchText)}</span>
+        </div>
+    </div>`;
+}
+
+function buildWorkflowBranchDetailHtml(data) {
+    const cond = (data && data.edgeCondition) || '';
+    if (!cond) return '';
+    return `<div class="timeline-item-content workflow-branch-detail">
+        <span class="workflow-agent-io-label">连线条件</span>
+        <code>${escapeHtml(cond)}</code>
+    </div>`;
+}
+
 function addTimelineItem(timeline, type, options) {
     const item = document.createElement('div');
     // 生成唯一ID
@@ -3382,8 +3535,35 @@ function addTimelineItem(timeline, type, options) {
                 </div>
             </div>
         `;
-    } else if (type === 'eino_agent_reply' && options.message) {
-        content += `<div class="timeline-item-content">${formatMarkdown(options.message, timelineMarkdownOpts)}</div>`;
+    } else if ((type === 'eino_agent_reply' || type === 'workflow_agent_output') && options.message) {
+        let prefix = '';
+        if (type === 'workflow_agent_output' && options.data) {
+            const source = options.data.inputSource || '';
+            const preview = options.data.inputPreview || '';
+            if (source || preview) {
+                const previewText = String(preview || '').trim();
+                const summaryPreview = previewText.length > 80 ? (previewText.slice(0, 80) + '...') : previewText;
+                prefix = `<details class="workflow-agent-input">
+                    <summary>
+                        <span class="workflow-agent-io-label">输入</span>
+                        ${source ? `<code>${escapeHtml(source)}</code>` : ''}
+                        ${summaryPreview ? `<span class="workflow-agent-input-summary">${escapeHtml(summaryPreview)}</span>` : ''}
+                    </summary>
+                    ${previewText ? `<pre>${escapeHtml(previewText)}</pre>` : '<div class="workflow-agent-empty">暂无输入预览</div>'}
+                </details>`;
+            }
+        }
+        const body = type === 'workflow_agent_output'
+            ? `<div class="workflow-agent-output">
+                <div class="workflow-agent-io-label">输出</div>
+                <div class="workflow-agent-output-body">${formatMarkdown(options.message, timelineMarkdownOpts)}</div>
+            </div>`
+            : formatMarkdown(options.message, timelineMarkdownOpts);
+        content += `<div class="timeline-item-content workflow-agent-io">${prefix}${body}</div>`;
+    } else if (type === 'workflow_node_result' && options.data && String(options.data.nodeType || '').toLowerCase() === 'condition') {
+        content += buildWorkflowConditionResultHtml(options.data);
+    } else if ((type === 'workflow_branch_taken' || type === 'workflow_branch_skipped') && options.data) {
+        content += buildWorkflowBranchDetailHtml(options.data);
     } else if (type === 'tool_result' && options.data) {
         const data = options.data;
         const isError = data.isError || !data.success;
