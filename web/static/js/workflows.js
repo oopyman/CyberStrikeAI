@@ -45,6 +45,10 @@
 
     const AGENT_MODES = ['eino_single', 'deep', 'plan_execute', 'supervisor'];
     const JOIN_STRATEGIES = ['all_merge', 'last_by_canvas', 'first_non_empty', 'fail_fast'];
+    const NODE_DEFAULT_SIZE = { w: 150, h: 52 };
+    const NODE_TYPE_SIZES = { condition: { w: 118, h: 86 } };
+    const NODE_PLACEMENT_GAP = 48;
+    const NODE_PLACEMENT_PADDING = 20;
 
     const WORKFLOW_EDIT_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
 
@@ -275,6 +279,15 @@
                     style: {
                         'border-width': 4,
                         'border-color': '#fbbf24'
+                    }
+                },
+                {
+                    selector: 'node.just-added',
+                    style: {
+                        'border-width': 4,
+                        'border-color': '#fbbf24',
+                        'border-opacity': 1,
+                        'z-index': 999
                     }
                 }
             ],
@@ -834,6 +847,100 @@
         connectSourceId = '';
     }
 
+    function nodeSizeForType(type) {
+        return NODE_TYPE_SIZES[type] || NODE_DEFAULT_SIZE;
+    }
+
+    function viewportCenterPosition() {
+        const pan = cy.pan();
+        const zoom = cy.zoom();
+        const container = cy.container();
+        return {
+            x: (container.clientWidth / 2 - pan.x) / zoom,
+            y: (container.clientHeight / 2 - pan.y) / zoom
+        };
+    }
+
+    function positionOverlaps(x, y, width, height, excludeId) {
+        const pad = NODE_PLACEMENT_PADDING;
+        const hw = width / 2 + pad;
+        const hh = height / 2 + pad;
+        return cy.nodes().some(node => {
+            if (excludeId && node.id() === excludeId) return false;
+            const p = node.position();
+            const bb = node.boundingBox();
+            return Math.abs(p.x - x) < hw + bb.w / 2 && Math.abs(p.y - y) < hh + bb.h / 2;
+        });
+    }
+
+    function findOpenPosition(anchor, type) {
+        const size = nodeSizeForType(type);
+        const step = 36;
+        for (let i = 0; i < 20; i++) {
+            const x = anchor.x + (i % 5) * step;
+            const y = anchor.y + Math.floor(i / 5) * step;
+            if (!positionOverlaps(x, y, size.w, size.h)) {
+                return { x, y };
+            }
+        }
+        return anchor;
+    }
+
+    function anchorFromSelection(type) {
+        if (selectedElement && selectedElement.length && selectedElement.isNode()) {
+            const p = selectedElement.position();
+            const srcBb = selectedElement.boundingBox();
+            const size = nodeSizeForType(type);
+            const gap = NODE_PLACEMENT_GAP;
+            const candidates = [
+                { x: p.x + srcBb.w / 2 + gap + size.w / 2, y: p.y },
+                { x: p.x, y: p.y + srcBb.h / 2 + gap + size.h / 2 },
+                { x: p.x - srcBb.w / 2 - gap - size.w / 2, y: p.y },
+                { x: p.x, y: p.y - srcBb.h / 2 - gap - size.h / 2 }
+            ];
+            for (let i = 0; i < candidates.length; i++) {
+                const c = candidates[i];
+                if (!positionOverlaps(c.x, c.y, size.w, size.h)) {
+                    return c;
+                }
+            }
+            return findOpenPosition(candidates[0], type);
+        }
+        return viewportCenterPosition();
+    }
+
+    function defaultNodePosition(type) {
+        return findOpenPosition(anchorFromSelection(type), type);
+    }
+
+    function isPositionInViewport(x, y, padding) {
+        const extent = cy.extent();
+        const pad = padding == null ? 40 : padding;
+        return x >= extent.x1 + pad && x <= extent.x2 - pad &&
+            y >= extent.y1 + pad && y <= extent.y2 - pad;
+    }
+
+    function highlightNewNode(node) {
+        if (!node || !node.length) return;
+        if (typeof node.flashClass === 'function') {
+            node.flashClass('just-added', 650);
+        } else {
+            node.addClass('just-added');
+            setTimeout(function () {
+                if (node.nonempty()) node.removeClass('just-added');
+            }, 650);
+        }
+    }
+
+    function revealWorkflowNode(node) {
+        if (!node || !node.length) return;
+        const p = node.position();
+        if (!isPositionInViewport(p.x, p.y)) {
+            cy.animate({ center: { eles: node }, duration: 200 });
+        }
+        highlightNewNode(node);
+    }
+
     function addNode(type, position) {
         initCy();
         if (!cy) return;
@@ -845,10 +952,15 @@
                 label: wfNodeLabel(type),
                 config: defaultConfigForType(type)
             },
-            position: position || { x: 180 + cy.nodes().length * 28, y: 160 + cy.nodes().length * 28 }
+            position: position || defaultNodePosition(type)
         });
         selectWorkflowElement(node);
         updateEmptyState();
+        if (position) {
+            highlightNewNode(node);
+        } else {
+            revealWorkflowNode(node);
+        }
     }
 
     window.refreshWorkflows = async function () {
