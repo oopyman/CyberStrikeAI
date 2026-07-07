@@ -719,6 +719,8 @@ CyberStrikeAI is a professional security testing platform designed to assist sec
 
 **The developers are not responsible for any misuse!** Please ensure your usage complies with local laws and regulations, and that you have obtained explicit authorization from the target system owner.
 
+For vulnerability reporting and deployment hardening guidance, see [SECURITY.md](SECURITY.md).
+
 ---
 
 Need help or want to contribute? Open an issue or PR—community tooling additions are welcome!
