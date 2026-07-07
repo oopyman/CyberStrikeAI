@@ -71,3 +71,23 @@ func TestPersistAuthPasswordDoesNotTreatQuotedHashAsComment(t *testing.T) {
 		t.Fatalf("old quoted password fragment was incorrectly preserved as a comment:\n%s", data)
 	}
 }
+
+func TestHitlAuditModelEffectiveFallsBackToMainConfig(t *testing.T) {
+	main := OpenAIConfig{
+		Provider: "openai",
+		BaseURL:  "https://api.example.com/v1",
+		APIKey:   "main-key",
+		Model:    "large-model",
+	}
+
+	got := (HitlConfig{
+		AuditModel: OpenAIConfig{Model: "small-reviewer"},
+	}).AuditModelEffective(main)
+
+	if got.Provider != main.Provider || got.BaseURL != main.BaseURL || got.APIKey != main.APIKey {
+		t.Fatalf("expected provider/base_url/api_key to inherit main config, got %+v", got)
+	}
+	if got.Model != "small-reviewer" {
+		t.Fatalf("expected audit model override, got %q", got.Model)
+	}
+}

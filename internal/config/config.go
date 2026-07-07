@@ -670,6 +670,8 @@ type AgentConfig struct {
 // tool_whitelist 可在侧栏「应用」时合并写入 config.yaml 并立即生效。
 // audit_agent_prompt / audit_agent_prompt_review_edit 可在人机协同页编辑并立即生效；空则使用内置默认。
 type HitlConfig struct {
+	// AuditModel 审计 Agent 专用模型；字段留空时继承 OpenAI 主配置，便于用小模型做审批。
+	AuditModel OpenAIConfig `yaml:"audit_model,omitempty" json:"audit_model,omitempty"`
 	// ToolWhitelist 全局免审批工具名（与白名单内工具不触发 HITL 审批）。
 	ToolWhitelist []string `yaml:"tool_whitelist,omitempty" json:"tool_whitelist,omitempty"`
 	// AuditAgentPrompt 审批模式（approval）下审计 Agent 系统提示词。
@@ -701,6 +703,28 @@ func (h HitlConfig) RetentionDaysEffective() int {
 		return 0
 	}
 	return *h.RetentionDays
+}
+
+// AuditModelEffective returns the audit-agent model config with empty fields inherited from the main model config.
+func (h HitlConfig) AuditModelEffective(main OpenAIConfig) OpenAIConfig {
+	out := main
+	am := h.AuditModel
+	if strings.TrimSpace(am.Provider) != "" {
+		out.Provider = strings.TrimSpace(am.Provider)
+	}
+	if strings.TrimSpace(am.BaseURL) != "" {
+		out.BaseURL = strings.TrimSpace(am.BaseURL)
+	}
+	if strings.TrimSpace(am.APIKey) != "" {
+		out.APIKey = strings.TrimSpace(am.APIKey)
+	}
+	if strings.TrimSpace(am.Model) != "" {
+		out.Model = strings.TrimSpace(am.Model)
+	}
+	if am.MaxTotalTokens > 0 {
+		out.MaxTotalTokens = am.MaxTotalTokens
+	}
+	return out
 }
 
 const hitlAuditAgentPromptBase = `你是 CyberStrikeAI 人机协同审计 Agent。审查 Agent 即将执行的工具调用是否会对系统造成实质性损害。
