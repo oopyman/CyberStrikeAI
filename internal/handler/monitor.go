@@ -575,7 +575,7 @@ func (h *MonitorHandler) lookupExecution(id string) *mcp.ToolExecution {
 	return nil
 }
 
-// BatchGetToolNames 批量获取工具执行的工具名称（消除前端 N+1 请求）
+// BatchGetToolNames 批量获取工具执行摘要（消除前端 N+1 请求）
 func (h *MonitorHandler) BatchGetToolNames(c *gin.Context) {
 	var req struct {
 		IDs []string `json:"ids"`
@@ -585,24 +585,29 @@ func (h *MonitorHandler) BatchGetToolNames(c *gin.Context) {
 		return
 	}
 
-	result := make(map[string]string, len(req.IDs))
+	type executionSummary struct {
+		ToolName string `json:"toolName"`
+		Status   string `json:"status"`
+	}
+
+	result := make(map[string]executionSummary, len(req.IDs))
 	for _, id := range req.IDs {
 		// 先从内部MCP服务器查找
 		if exec, exists := h.mcpServer.GetExecution(id); exists {
-			result[id] = exec.ToolName
+			result[id] = executionSummary{ToolName: exec.ToolName, Status: exec.Status}
 			continue
 		}
 		// 再从外部MCP管理器查找
 		if h.externalMCPMgr != nil {
 			if exec, exists := h.externalMCPMgr.GetExecution(id); exists {
-				result[id] = exec.ToolName
+				result[id] = executionSummary{ToolName: exec.ToolName, Status: exec.Status}
 				continue
 			}
 		}
 		// 最后从数据库查找
 		if h.db != nil {
 			if exec, err := h.db.GetToolExecution(id); err == nil && exec != nil {
-				result[id] = exec.ToolName
+				result[id] = executionSummary{ToolName: exec.ToolName, Status: exec.Status}
 			}
 		}
 	}

@@ -176,10 +176,16 @@ func (h *ConversationHandler) GetConversation(c *gin.Context) {
 	c.JSON(http.StatusOK, conv)
 }
 
+const (
+	defaultProcessDetailsPageLimit = 50
+	maxProcessDetailsPageLimit     = 500
+)
+
 // GetMessageProcessDetails 获取指定消息的过程详情（按需加载）
 // 查询参数：
 //   - summary=1：仅返回摘要（total / iterationCount / maxIteration）
-//   - limit + offset：分页返回 processDetails（未指定 limit 时保持全量兼容）
+//   - limit + offset：分页返回 processDetails（未指定 limit 时默认 50 条）
+//   - full=1：显式返回全量 processDetails（用于导出/兼容旧集成，不建议 UI 展开时使用）
 func (h *ConversationHandler) GetMessageProcessDetails(c *gin.Context) {
 	messageID := c.Param("id")
 	if messageID == "" {
@@ -199,52 +205,84 @@ func (h *ConversationHandler) GetMessageProcessDetails(c *gin.Context) {
 		return
 	}
 
-	limitStr := strings.TrimSpace(c.Query("limit"))
-	if limitStr != "" {
-		limit, err := strconv.Atoi(limitStr)
-		if err != nil || limit <= 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid limit"})
-			return
-		}
-		if limit > 500 {
-			limit = 500
-		}
-		offset, _ := strconv.Atoi(strings.TrimSpace(c.Query("offset")))
-		if offset < 0 {
-			offset = 0
-		}
-
-		details, total, err := h.db.GetProcessDetailsPage(messageID, limit, offset)
+	fullStr := strings.TrimSpace(c.Query("full"))
+	if fullStr == "1" || strings.EqualFold(fullStr, "true") || strings.EqualFold(fullStr, "yes") {
+		details, err := h.db.GetProcessDetails(messageID)
 		if err != nil {
-			h.logger.Error("分页获取过程详情失败", zap.Error(err))
+			h.logger.Error("获取过程详情失败", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+
 		details = database.DedupeConsecutiveProcessDetails(details)
-		out := processDetailsToJSON(h.logger, details)
+		out := processDetailsToJSON(h.logger, details, true)
 		c.JSON(http.StatusOK, gin.H{
 			"processDetails": out,
-			"total":          total,
-			"offset":         offset,
-			"limit":          limit,
-			"hasMore":        offset+len(out) < total,
+			"total":          len(out),
+			"offset":         0,
+			"limit":          len(out),
+			"hasMore":        false,
 		})
 		return
 	}
 
-	details, err := h.db.GetProcessDetails(messageID)
+	limitStr := strings.TrimSpace(c.Query("limit"))
+	limit := defaultProcessDetailsPageLimit
+	if limitStr != "" {
+		parsedLimit, err := strconv.Atoi(limitStr)
+		if err != nil || parsedLimit <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid limit"})
+			return
+		}
+		limit = parsedLimit
+	}
+	if limit > maxProcessDetailsPageLimit {
+		limit = maxProcessDetailsPageLimit
+	}
+	offset, _ := strconv.Atoi(strings.TrimSpace(c.Query("offset")))
+	if offset < 0 {
+		offset = 0
+	}
+
+	details, total, err := h.db.GetProcessDetailsPage(messageID, limit, offset)
 	if err != nil {
-		h.logger.Error("获取过程详情失败", zap.Error(err))
+		h.logger.Error("分页获取过程详情失败", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
 	details = database.DedupeConsecutiveProcessDetails(details)
-	out := processDetailsToJSON(h.logger, details)
-	c.JSON(http.StatusOK, gin.H{"processDetails": out, "total": len(out)})
+	out := processDetailsToJSON(h.logger, details, false)
+	c.JSON(http.StatusOK, gin.H{
+		"processDetails": out,
+		"total":          total,
+		"offset":         offset,
+		"limit":          limit,
+		"hasMore":        offset+len(out) < total,
+	})
 }
 
-func processDetailsToJSON(logger *zap.Logger, details []database.ProcessDetail) []map[string]interface{} {
+// GetProcessDetail 获取单条完整过程详情。列表接口默认不给工具 payload，用户点开单条工具时再拉这里。
+func (h *ConversationHandler) GetProcessDetail(c *gin.Context) {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "process detail id required"})
+		return
+	}
+	detail, err := h.db.GetProcessDetailByID(id)
+	if err != nil {
+		h.logger.Error("获取过程详情失败", zap.Error(err))
+		c.JSON(http.StatusNotFound, gin.H{"error": "过程详情不存在"})
+		return
+	}
+	out := processDetailsToJSON(h.logger, []database.ProcessDetail{*detail}, true)
+	if len(out) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "过程详情不存在"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"processDetail": out[0]})
+}
+
+func processDetailsToJSON(logger *zap.Logger, details []database.ProcessDetail, includeToolPayload bool) []map[string]interface{} {
 	out := make([]map[string]interface{}, 0, len(details))
 	for _, d := range details {
 		var data interface{}
@@ -252,6 +290,9 @@ func processDetailsToJSON(logger *zap.Logger, details []database.ProcessDetail) 
 			if err := json.Unmarshal([]byte(d.Data), &data); err != nil {
 				logger.Warn("解析过程详情数据失败", zap.Error(err))
 			}
+		}
+		if !includeToolPayload {
+			data = summarizeProcessDetailData(d.EventType, data)
 		}
 		out = append(out, map[string]interface{}{
 			"id":             d.ID,
@@ -263,6 +304,27 @@ func processDetailsToJSON(logger *zap.Logger, details []database.ProcessDetail) 
 			"createdAt":      d.CreatedAt,
 		})
 	}
+	return out
+}
+
+func summarizeProcessDetailData(eventType string, data interface{}) interface{} {
+	m, ok := data.(map[string]interface{})
+	if !ok || (eventType != "tool_call" && eventType != "tool_result") {
+		return data
+	}
+	allow := map[string]bool{
+		"toolName": true, "toolCallId": true, "index": true, "total": true,
+		"success": true, "isError": true, "executionId": true,
+		"einoAgent": true, "einoRole": true, "einoScope": true, "orchestration": true,
+		"agentFacing": true,
+	}
+	out := make(map[string]interface{}, len(allow)+1)
+	for k, v := range m {
+		if allow[k] {
+			out[k] = v
+		}
+	}
+	out["_payloadDeferred"] = true
 	return out
 }
 

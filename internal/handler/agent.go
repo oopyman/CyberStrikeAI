@@ -20,10 +20,10 @@ import (
 	"cyberstrike-ai/internal/audit"
 	"cyberstrike-ai/internal/config"
 	"cyberstrike-ai/internal/database"
-	"cyberstrike-ai/internal/reasoning"
 	"cyberstrike-ai/internal/mcp/builtin"
 	"cyberstrike-ai/internal/multiagent"
 	"cyberstrike-ai/internal/openai"
+	"cyberstrike-ai/internal/reasoning"
 
 	"github.com/gin-gonic/gin"
 	"github.com/robfig/cron/v3"
@@ -188,8 +188,8 @@ type AgentHandler struct {
 	hitlWhitelistSaver       HitlToolWhitelistSaver
 	hitlStrategySaver        HitlAuditStrategySaver
 	hitlDefaultReviewerSaver HitlDefaultReviewerSaver
-	auditLLM           *openai.Client
-	audit              *audit.Service
+	auditLLM                 *openai.Client
+	audit                    *audit.Service
 }
 
 // SetAudit wires platform audit logging.
@@ -332,13 +332,13 @@ type ChatReasoningRequest struct {
 
 // ChatRequest 聊天请求
 type ChatRequest struct {
-	Message              string           `json:"message" binding:"required"`
-	ConversationID       string           `json:"conversationId,omitempty"`
-	ProjectID            string           `json:"projectId,omitempty"` // 新对话绑定的项目（可选；未指定时可用 config.project.default_project_id）
-	Role                 string           `json:"role,omitempty"` // 角色名称
-	Attachments          []ChatAttachment `json:"attachments,omitempty"`
-	WebShellConnectionID string           `json:"webshellConnectionId,omitempty"` // WebShell 管理 - AI 助手：当前选中的连接 ID，仅使用 webshell_* 工具
-	Hitl                 *HITLRequest     `json:"hitl,omitempty"`
+	Message              string                `json:"message" binding:"required"`
+	ConversationID       string                `json:"conversationId,omitempty"`
+	ProjectID            string                `json:"projectId,omitempty"` // 新对话绑定的项目（可选；未指定时可用 config.project.default_project_id）
+	Role                 string                `json:"role,omitempty"`      // 角色名称
+	Attachments          []ChatAttachment      `json:"attachments,omitempty"`
+	WebShellConnectionID string                `json:"webshellConnectionId,omitempty"` // WebShell 管理 - AI 助手：当前选中的连接 ID，仅使用 webshell_* 工具
+	Hitl                 *HITLRequest          `json:"hitl,omitempty"`
 	Reasoning            *ChatReasoningRequest `json:"reasoning,omitempty"`
 	// Orchestration 仅对 /api/multi-agent、/api/multi-agent/stream：deep | plan_execute | supervisor；空则等同 deep。机器人/批量等无请求体时由服务端默认 deep。/api/eino-agent* 不使用此字段。
 	Orchestration string `json:"orchestration,omitempty"`
@@ -988,11 +988,20 @@ func (h *AgentHandler) createProgressCallback(runCtx context.Context, cancelRun 
 			}
 		}
 
-		// 流式：写 HTTP SSE；非流式（机器人等）：镜像到 taskEventBus 供 Web 订阅
-		if sendEventFunc != nil {
-			sendEventFunc(eventType, message, data)
-		} else {
-			h.publishProgressToTaskEventBus(conversationID, eventType, message, data)
+		// 工具输出片段不在详情区实时展示；完整结果由 tool_result 落库后按需拉取。
+		if eventType == "tool_result_delta" {
+			return
+		}
+
+		deferToolProgressSend := eventType == "tool_call" || eventType == "tool_result"
+		// 流式：写 HTTP SSE；非流式（机器人等）：镜像到 taskEventBus 供 Web 订阅。
+		// 工具事件需先落库拿 processDetailId，再向前端发送摘要，避免大 payload 默认进入浏览器。
+		if !deferToolProgressSend {
+			if sendEventFunc != nil {
+				sendEventFunc(eventType, message, data)
+			} else {
+				h.publishProgressToTaskEventBus(conversationID, eventType, message, data)
+			}
 		}
 
 		// 保存tool_call事件中的参数
@@ -1360,8 +1369,27 @@ func (h *AgentHandler) createProgressCallback(runCtx context.Context, cancelRun 
 			// 在关键过程事件落库前，先把「规划中」与聚合中的 thinking / reasoning_chain 流落库
 			flushResponsePlan()
 			flushThinkingStreams()
-			if err := h.db.AddProcessDetail(assistantMessageID, conversationID, eventType, message, data); err != nil {
+			processDetailID, err := h.db.AddProcessDetailWithID(assistantMessageID, conversationID, eventType, message, data)
+			if err != nil {
 				h.logger.Warn("保存过程详情失败", zap.Error(err), zap.String("eventType", eventType))
+			}
+			if deferToolProgressSend {
+				clientData := summarizeProcessDetailData(eventType, data)
+				if m, ok := clientData.(map[string]interface{}); ok {
+					m["processDetailId"] = processDetailID
+				}
+				if sendEventFunc != nil {
+					sendEventFunc(eventType, message, clientData)
+				} else {
+					h.publishProgressToTaskEventBus(conversationID, eventType, message, clientData)
+				}
+			}
+		} else if deferToolProgressSend {
+			clientData := summarizeProcessDetailData(eventType, data)
+			if sendEventFunc != nil {
+				sendEventFunc(eventType, message, clientData)
+			} else {
+				h.publishProgressToTaskEventBus(conversationID, eventType, message, clientData)
 			}
 		}
 	}
@@ -1495,10 +1523,10 @@ func (h *AgentHandler) CancelAgentLoop(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"status":           "cancelling",
-		"conversationId": req.ConversationID,
-		"message":          msg,
-		"continueAfter":    false,
+		"status":            "cancelling",
+		"conversationId":    req.ConversationID,
+		"message":           msg,
+		"continueAfter":     false,
 		"interruptWithNote": false,
 	})
 }

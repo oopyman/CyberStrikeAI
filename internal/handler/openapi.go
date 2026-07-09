@@ -4735,7 +4735,7 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 				"get": map[string]interface{}{
 					"tags":        []string{"对话交互"},
 					"summary":     "获取消息过程详情",
-					"description": "按需加载指定消息的执行过程详情，包括工具调用、思考过程等事件。",
+					"description": "按需分页加载指定消息的执行过程详情，包括工具调用、思考过程等事件。默认返回 50 条；导出或旧集成需要全量时可显式传 full=1。",
 					"operationId": "getMessageProcessDetails",
 					"parameters": []map[string]interface{}{
 						{
@@ -4744,6 +4744,34 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 							"required":    true,
 							"description": "消息ID",
 							"schema":      map[string]interface{}{"type": "string"},
+						},
+						{
+							"name":        "summary",
+							"in":          "query",
+							"required":    false,
+							"description": "仅返回过程详情摘要（total / iterationCount / maxIteration）",
+							"schema":      map[string]interface{}{"type": "boolean"},
+						},
+						{
+							"name":        "limit",
+							"in":          "query",
+							"required":    false,
+							"description": "分页大小，默认 50，最大 500",
+							"schema":      map[string]interface{}{"type": "integer", "default": 50, "maximum": 500},
+						},
+						{
+							"name":        "offset",
+							"in":          "query",
+							"required":    false,
+							"description": "分页偏移量，默认 0",
+							"schema":      map[string]interface{}{"type": "integer", "default": 0},
+						},
+						{
+							"name":        "full",
+							"in":          "query",
+							"required":    false,
+							"description": "显式返回全量过程详情；仅建议导出/兼容旧集成使用",
+							"schema":      map[string]interface{}{"type": "boolean"},
 						},
 					},
 					"responses": map[string]interface{}{
@@ -4768,6 +4796,14 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 														"createdAt":      map[string]interface{}{"type": "string", "format": "date-time", "description": "创建时间"},
 													},
 												},
+											},
+											"total":   map[string]interface{}{"type": "integer", "description": "过程详情总数"},
+											"offset":  map[string]interface{}{"type": "integer", "description": "当前分页偏移量"},
+											"limit":   map[string]interface{}{"type": "integer", "description": "当前分页大小"},
+											"hasMore": map[string]interface{}{"type": "boolean", "description": "是否还有更多过程详情"},
+											"summary": map[string]interface{}{
+												"type":        "object",
+												"description": "summary=1 时返回的摘要",
 											},
 										},
 									},
