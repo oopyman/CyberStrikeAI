@@ -1,6 +1,6 @@
 /**
  * 项目事实图渲染（Cytoscape + ELK），供项目管理页使用。
- * 节点采用 SVG 卡片背景（图标 + 多行文字），避免 Cytoscape 原生 label 定位问题。
+ * 节点采用 SVG 卡片背景（左上角图标 + 多行文字），避免 Cytoscape 原生 label 定位问题。
  */
 (function (global) {
     'use strict';
@@ -25,11 +25,11 @@
 
     const CARD_PAD = 14;
     const CARD_TEXT_PAD_RIGHT = 12;
-    const CARD_ICON = 36;
-    const CARD_ICON_GAP = 12;
+    const CARD_ICON = 24;
+    const CARD_ICON_GAP = 8;
     const CARD_TEXT_X = CARD_PAD + CARD_ICON + CARD_ICON_GAP;
-    const CARD_MIN_W = 300;
-    const CARD_TARGET_W = 360;
+    const CARD_MIN_W = 340;
+    const CARD_TARGET_W = 380;
     const CARD_MIN_H = 88;
     const CARD_MAX_H = 176;
     const CARD_HEADER_FS = 11;
@@ -320,7 +320,7 @@
         const isTentative = conf === 'tentative';
         const isDeprecated = conf === 'deprecated';
         const iconX = CARD_PAD;
-        const iconY = (height - CARD_ICON) / 2;
+        const iconY = CARD_PAD + 1;
         const headerY = CARD_PAD + CARD_HEADER_FS;
         const keyY = CARD_PAD + headerLines.length * CARD_HEADER_LH + CARD_SECTION_GAP + CARD_KEY_FS;
         const summaryY =

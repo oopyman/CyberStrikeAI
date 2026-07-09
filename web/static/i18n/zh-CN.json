@@ -212,6 +212,8 @@
     "statusFixed": "已修复",
     "statusFalsePositive": "误报",
     "statusIgnored": "已忽略",
+    "statusFilter": "状态筛选",
+    "allStatuses": "全部状态",
     "fixRate": "修复率",
     "dataStale": "数据可能已过期，请手动刷新",
     "recommendedActions": "推荐操作",

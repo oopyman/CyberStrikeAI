@@ -7201,12 +7201,16 @@ html[data-theme="dark"] .openapi-doc-btn:hover {
 
 .terminal-panes {
     position: relative;
+    height: 400px;
     min-height: 400px;
+    overflow: hidden;
 }
 
 .terminal-pane {
     display: none;
-    min-height: 400px;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
 }
 
 .terminal-pane.active {
@@ -7214,38 +7218,46 @@ html[data-theme="dark"] .openapi-doc-btn:hover {
 }
 
 .terminal-container {
-    min-height: 400px;
-    padding: 8px;
+    height: 100%;
+    min-height: 0;
+    padding: 0;
     box-sizing: border-box;
+    overflow: hidden;
 }
 
 .terminal-container .xterm {
-    padding: 0;
+    padding: 8px 12px 8px 8px;
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+    background: #0d1117;
 }
 
 .terminal-container .xterm-viewport {
     border-radius: 0;
-    /* 与 WebShell 终端一致：细窄、深色，避免系统默认浅色粗滚动条 */
+    background: #0d1117;
     scrollbar-width: thin;
-    scrollbar-color: rgba(110, 118, 129, 0.5) transparent;
+    scrollbar-color: rgba(139, 148, 158, 0.7) rgba(22, 27, 34, 0.95);
 }
 .terminal-container .xterm-viewport::-webkit-scrollbar {
-    width: 6px;
+    width: 8px;
 }
 .terminal-container .xterm-viewport::-webkit-scrollbar-track {
-    background: transparent;
-    margin: 4px 0;
-    border-radius: 3px;
+    background: rgba(22, 27, 34, 0.95);
+    border-left: 1px solid rgba(48, 54, 61, 0.9);
 }
 .terminal-container .xterm-viewport::-webkit-scrollbar-thumb {
-    background: rgba(110, 118, 129, 0.4);
-    border-radius: 3px;
+    min-height: 44px;
+    background: rgba(139, 148, 158, 0.72);
+    border: 1px solid rgba(22, 27, 34, 0.95);
+    border-radius: 8px;
 }
 .terminal-container .xterm-viewport::-webkit-scrollbar-thumb:hover {
-    background: rgba(110, 118, 129, 0.65);
+    background: rgba(177, 186, 196, 0.82);
 }
 .terminal-container .xterm-viewport::-webkit-scrollbar-thumb:active {
-    background: rgba(139, 148, 158, 0.7);
+    background: rgba(201, 209, 217, 0.9);
 }
 
 .terminal-error {
@@ -20031,6 +20043,160 @@ tr.mcp-stats-tool-row[data-tool-name]:focus-visible {
     transform: translateX(2px);
 }
 
+.dashboard-section-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-left: auto;
+    flex-shrink: 0;
+}
+
+.dashboard-severity-status-filter {
+    display: inline-flex;
+    align-items: center;
+    position: relative;
+}
+
+.dashboard-severity-status-filter-btn {
+    height: 30px;
+    min-width: 124px;
+    padding: 0 10px;
+    border-radius: 7px;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    background: rgba(248, 250, 252, 0.62);
+    color: var(--text-primary);
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    outline: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 7px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.46);
+    transition: border-color 0.2s, box-shadow 0.2s, background 0.2s, transform 0.15s;
+}
+
+.dashboard-severity-status-filter-btn:hover,
+.dashboard-severity-status-filter.is-open .dashboard-severity-status-filter-btn {
+    border-color: rgba(0, 102, 255, 0.24);
+    background: rgba(255, 255, 255, 0.78);
+    box-shadow: 0 6px 14px rgba(15, 23, 42, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.65);
+}
+
+.dashboard-severity-status-filter-btn:focus-visible {
+    border-color: rgba(0, 102, 255, 0.42);
+    box-shadow: 0 0 0 2px rgba(0, 102, 255, 0.10);
+}
+
+.dashboard-severity-status-filter-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: #64748b;
+    box-shadow: 0 0 0 3px rgba(100, 116, 139, 0.12);
+    flex-shrink: 0;
+}
+
+.dashboard-severity-status-filter[data-value="open"] .dashboard-severity-status-filter-dot { background: #ef4444; box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.14); }
+.dashboard-severity-status-filter[data-value="confirmed"] .dashboard-severity-status-filter-dot { background: #f59e0b; box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.16); }
+.dashboard-severity-status-filter[data-value="fixed"] .dashboard-severity-status-filter-dot { background: #22c55e; box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.16); }
+.dashboard-severity-status-filter[data-value="false_positive"] .dashboard-severity-status-filter-dot { background: #94a3b8; box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.16); }
+.dashboard-severity-status-filter[data-value="ignored"] .dashboard-severity-status-filter-dot { background: #64748b; box-shadow: 0 0 0 3px rgba(100, 116, 139, 0.16); }
+
+.dashboard-severity-status-filter-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.dashboard-severity-status-filter-caret {
+    width: 7px;
+    height: 7px;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: translateY(-2px) rotate(45deg);
+    opacity: 0.62;
+    flex-shrink: 0;
+    transition: transform 0.18s ease, opacity 0.18s ease;
+}
+
+.dashboard-severity-status-filter.is-open .dashboard-severity-status-filter-caret {
+    transform: translateY(2px) rotate(225deg);
+    opacity: 0.9;
+}
+
+.dashboard-severity-status-filter-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: 30;
+    width: 156px;
+    padding: 5px;
+    border-radius: 9px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background: rgba(255, 255, 255, 0.94);
+    box-shadow: 0 14px 30px rgba(15, 23, 42, 0.16), 0 1px 0 rgba(255, 255, 255, 0.65) inset;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+.dashboard-severity-status-filter-option {
+    width: 100%;
+    height: 30px;
+    padding: 0 10px 0 28px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+    position: relative;
+    transition: background 0.15s, color 0.15s;
+}
+
+.dashboard-severity-status-filter-option::before {
+    content: '';
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    width: 9px;
+    height: 5px;
+    border-left: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: translateY(-65%) rotate(-45deg);
+    opacity: 0;
+}
+
+.dashboard-severity-status-filter-option:hover,
+.dashboard-severity-status-filter-option.is-active {
+    background: rgba(0, 102, 255, 0.075);
+    color: #1d4ed8;
+}
+
+.dashboard-severity-status-filter-option.is-active::before {
+    opacity: 1;
+}
+
+@media (max-width: 640px) {
+    .dashboard-section-actions {
+        width: 100%;
+        justify-content: space-between;
+    }
+    .dashboard-section-header--severity {
+        flex-wrap: wrap;
+    }
+    .dashboard-severity-status-filter-btn {
+        min-width: 124px;
+    }
+    .dashboard-severity-status-filter-menu {
+        left: auto;
+        right: 0;
+    }
+}
+
 /* 最近漏洞 / 近期事实 Tab */
 .dashboard-section-header--tabs {
     align-items: center;
@@ -21540,8 +21706,14 @@ tr.mcp-stats-tool-row[data-tool-name]:focus-visible {
 
 .dashboard-severity-status-grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 10px;
+}
+
+@media (max-width: 1180px) {
+    .dashboard-severity-status-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
 }
 
 @media (max-width: 480px) {
@@ -21591,6 +21763,7 @@ tr.mcp-stats-tool-row[data-tool-name]:focus-visible {
 .dashboard-severity-status-cell.s-confirmed .dashboard-severity-status-icon  { background: rgba(245, 158, 11, 0.12); color: #d97706; }
 .dashboard-severity-status-cell.s-fixed .dashboard-severity-status-icon      { background: rgba(34, 197, 94, 0.12);  color: #16a34a; }
 .dashboard-severity-status-cell.s-fp .dashboard-severity-status-icon         { background: rgba(148, 163, 184, 0.18); color: #64748b; }
+.dashboard-severity-status-cell.s-ignored .dashboard-severity-status-icon    { background: rgba(100, 116, 139, 0.16); color: #64748b; }
 
 .dashboard-severity-status-text {
     display: flex;
@@ -30833,6 +31006,37 @@ html[data-theme="dark"] .dashboard-feed-tabs {
     border-color: #263244 !important;
 }
 
+html[data-theme="dark"] .dashboard-severity-status-filter-btn {
+    background: rgba(15, 23, 42, 0.46);
+    border-color: rgba(71, 85, 105, 0.58);
+    color: var(--text-primary);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.035);
+}
+
+html[data-theme="dark"] .dashboard-severity-status-filter-btn:hover,
+html[data-theme="dark"] .dashboard-severity-status-filter.is-open .dashboard-severity-status-filter-btn,
+html[data-theme="dark"] .dashboard-severity-status-filter-btn:focus-visible {
+    background: rgba(23, 32, 51, 0.72);
+    border-color: rgba(96, 165, 250, 0.36);
+    box-shadow: 0 8px 18px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.05);
+}
+
+html[data-theme="dark"] .dashboard-severity-status-filter-menu {
+    background: rgba(15, 23, 42, 0.94);
+    border-color: rgba(71, 85, 105, 0.62);
+    box-shadow: 0 16px 34px rgba(0,0,0,0.32), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+html[data-theme="dark"] .dashboard-severity-status-filter-option {
+    color: var(--text-primary);
+}
+
+html[data-theme="dark"] .dashboard-severity-status-filter-option:hover,
+html[data-theme="dark"] .dashboard-severity-status-filter-option.is-active {
+    background: rgba(96, 165, 250, 0.10);
+    color: #bfdbfe;
+}
+
 html[data-theme="dark"] .dashboard-feed-tab {
     color: var(--text-secondary);
 }
@@ -31488,6 +31692,73 @@ html[data-theme="dark"] .projects-stat-chip--warn {
     background: rgba(245, 158, 11, 0.14) !important;
     color: #fcd34d !important;
     border-color: rgba(245, 158, 11, 0.34) !important;
+}
+
+html[data-theme="dark"] .projects-confidence--confirmed,
+html[data-theme="dark"] .projects-fact-badge--ok {
+    background: rgba(34, 197, 94, 0.12) !important;
+    color: #6ee7a8 !important;
+    border-color: rgba(34, 197, 94, 0.22) !important;
+}
+
+html[data-theme="dark"] .projects-confidence--tentative,
+html[data-theme="dark"] .projects-fact-badge--warn {
+    background: rgba(245, 158, 11, 0.12) !important;
+    color: #fbbf24 !important;
+    border-color: rgba(245, 158, 11, 0.22) !important;
+}
+
+html[data-theme="dark"] .projects-confidence--deprecated,
+html[data-theme="dark"] .projects-fact-badge--na {
+    background: rgba(148, 163, 184, 0.11) !important;
+    color: #aebbd0 !important;
+    border-color: rgba(148, 163, 184, 0.20) !important;
+}
+
+html[data-theme="dark"] .projects-category--target,
+html[data-theme="dark"] .project-fact-graph-node-category--target {
+    background: rgba(59, 130, 246, 0.18) !important;
+    color: #93c5fd !important;
+    border-color: rgba(59, 130, 246, 0.36) !important;
+}
+
+html[data-theme="dark"] .projects-category--auth,
+html[data-theme="dark"] .projects-category--chain,
+html[data-theme="dark"] .projects-category--custom,
+html[data-theme="dark"] .project-fact-graph-node-category--chain,
+html[data-theme="dark"] .project-fact-graph-node-category--vulnerability {
+    background: rgba(168, 85, 247, 0.16) !important;
+    color: #d8b4fe !important;
+    border-color: rgba(168, 85, 247, 0.34) !important;
+}
+
+html[data-theme="dark"] .projects-category--infra,
+html[data-theme="dark"] .projects-category--note,
+html[data-theme="dark"] .project-fact-graph-node-category--infra,
+html[data-theme="dark"] .project-fact-graph-node-category--note,
+html[data-theme="dark"] .project-fact-graph-node-category--missing {
+    background: rgba(148, 163, 184, 0.14) !important;
+    color: #cbd5e1 !important;
+    border-color: rgba(148, 163, 184, 0.30) !important;
+}
+
+html[data-theme="dark"] .projects-category--business,
+html[data-theme="dark"] .project-fact-graph-node-category--auth,
+html[data-theme="dark"] .project-fact-graph-node-category--business {
+    background: rgba(20, 184, 166, 0.16) !important;
+    color: #5eead4 !important;
+    border-color: rgba(20, 184, 166, 0.34) !important;
+}
+
+html[data-theme="dark"] .projects-category--finding,
+html[data-theme="dark"] .projects-category--exploit,
+html[data-theme="dark"] .projects-category--poc,
+html[data-theme="dark"] .project-fact-graph-node-category--finding,
+html[data-theme="dark"] .project-fact-graph-node-category--exploit,
+html[data-theme="dark"] .project-fact-graph-node-category--poc {
+    background: rgba(249, 115, 22, 0.16) !important;
+    color: #fdba74 !important;
+    border-color: rgba(249, 115, 22, 0.36) !important;
 }
 
 html[data-theme="dark"] .hitl-tool-badge {

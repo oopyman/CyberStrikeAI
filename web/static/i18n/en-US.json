@@ -219,6 +219,8 @@
     "statusFixed": "Fixed",
     "statusFalsePositive": "False positive",
     "statusIgnored": "Ignored",
+    "statusFilter": "Status filter",
+    "allStatuses": "All statuses",
     "fixRate": "Fix rate",
     "dataStale": "Data may be stale — please refresh",
     "recommendedActions": "Recommended Actions",
