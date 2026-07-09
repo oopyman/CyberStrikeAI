@@ -319,13 +319,18 @@ func (h *ConfigHandler) GetConfig(c *gin.Context) {
 		subAgentCount = len(agents.MergeYAMLAndMarkdown(h.config.MultiAgent.SubAgents, load.SubAgents))
 	}
 	multiPub := config.MultiAgentPublic{
-		Enabled:                      h.config.MultiAgent.Enabled,
-		RobotDefaultAgentMode:        config.NormalizeRobotAgentMode(h.config.MultiAgent),
-		BatchUseMultiAgent:           h.config.MultiAgent.BatchUseMultiAgent,
-		SubAgentCount:                subAgentCount,
-		Orchestration:                config.NormalizeMultiAgentOrchestration(h.config.MultiAgent.Orchestration),
-		PlanExecuteLoopMaxIterations: h.config.MultiAgent.PlanExecuteLoopMaxIterations,
-		ToolSearchAlwaysVisibleTools: append([]string(nil), h.config.MultiAgent.EinoMiddleware.ToolSearchAlwaysVisibleTools...),
+		Enabled:                                    h.config.MultiAgent.Enabled,
+		RobotDefaultAgentMode:                      config.NormalizeRobotAgentMode(h.config.MultiAgent),
+		BatchUseMultiAgent:                         h.config.MultiAgent.BatchUseMultiAgent,
+		SubAgentCount:                              subAgentCount,
+		Orchestration:                              config.NormalizeMultiAgentOrchestration(h.config.MultiAgent.Orchestration),
+		PlanExecuteLoopMaxIterations:               h.config.MultiAgent.PlanExecuteLoopMaxIterations,
+		SummarizationUserIntentLedgerMaxRunes:      h.config.MultiAgent.EinoMiddleware.SummarizationUserIntentLedgerMaxRunesEffective(),
+		SummarizationUserIntentLedgerEntryMaxRunes: h.config.MultiAgent.EinoMiddleware.SummarizationUserIntentLedgerEntryMaxRunesEffective(),
+		LatestUserMessageMaxRunes:                  h.config.MultiAgent.EinoMiddleware.LatestUserMessageMaxRunesEffective(),
+		LatestUserMessageHeadRunes:                 h.config.MultiAgent.EinoMiddleware.LatestUserMessageHeadRunesEffective(),
+		LatestUserMessageTailRunes:                 h.config.MultiAgent.EinoMiddleware.LatestUserMessageTailRunesEffective(),
+		ToolSearchAlwaysVisibleTools:               append([]string(nil), h.config.MultiAgent.EinoMiddleware.ToolSearchAlwaysVisibleTools...),
 		ToolSearchAlwaysVisibleEffectiveTools: mergeToolNameLists(
 			h.config.MultiAgent.EinoMiddleware.ToolSearchAlwaysVisibleTools,
 			builtin.GetAllBuiltinTools(),
@@ -853,6 +858,41 @@ func (h *ConfigHandler) UpdateConfig(c *gin.Context) {
 		if req.MultiAgent.PlanExecuteLoopMaxIterations != nil {
 			h.config.MultiAgent.PlanExecuteLoopMaxIterations = *req.MultiAgent.PlanExecuteLoopMaxIterations
 		}
+		if req.MultiAgent.SummarizationUserIntentLedgerMaxRunes != nil {
+			v := *req.MultiAgent.SummarizationUserIntentLedgerMaxRunes
+			if v < 0 {
+				v = 0
+			}
+			h.config.MultiAgent.EinoMiddleware.SummarizationUserIntentLedgerMaxRunes = v
+		}
+		if req.MultiAgent.SummarizationUserIntentLedgerEntryMaxRunes != nil {
+			v := *req.MultiAgent.SummarizationUserIntentLedgerEntryMaxRunes
+			if v < 0 {
+				v = 0
+			}
+			h.config.MultiAgent.EinoMiddleware.SummarizationUserIntentLedgerEntryMaxRunes = v
+		}
+		if req.MultiAgent.LatestUserMessageMaxRunes != nil {
+			v := *req.MultiAgent.LatestUserMessageMaxRunes
+			if v < 0 {
+				v = 0
+			}
+			h.config.MultiAgent.EinoMiddleware.LatestUserMessageMaxRunes = v
+		}
+		if req.MultiAgent.LatestUserMessageHeadRunes != nil {
+			v := *req.MultiAgent.LatestUserMessageHeadRunes
+			if v < 0 {
+				v = 0
+			}
+			h.config.MultiAgent.EinoMiddleware.LatestUserMessageHeadRunes = v
+		}
+		if req.MultiAgent.LatestUserMessageTailRunes != nil {
+			v := *req.MultiAgent.LatestUserMessageTailRunes
+			if v < 0 {
+				v = 0
+			}
+			h.config.MultiAgent.EinoMiddleware.LatestUserMessageTailRunes = v
+		}
 		if req.MultiAgent.ToolSearchAlwaysVisibleTools != nil {
 			h.config.MultiAgent.EinoMiddleware.ToolSearchAlwaysVisibleTools = dedupeToolNameList(*req.MultiAgent.ToolSearchAlwaysVisibleTools)
 		}
@@ -861,6 +901,11 @@ func (h *ConfigHandler) UpdateConfig(c *gin.Context) {
 			zap.String("robot_default_agent_mode", config.NormalizeRobotAgentMode(h.config.MultiAgent)),
 			zap.Bool("batch_use_multi_agent", h.config.MultiAgent.BatchUseMultiAgent),
 			zap.Int("plan_execute_loop_max_iterations", h.config.MultiAgent.PlanExecuteLoopMaxIterations),
+			zap.Int("summarization_user_intent_ledger_max_runes", h.config.MultiAgent.EinoMiddleware.SummarizationUserIntentLedgerMaxRunesEffective()),
+			zap.Int("summarization_user_intent_ledger_entry_max_runes", h.config.MultiAgent.EinoMiddleware.SummarizationUserIntentLedgerEntryMaxRunesEffective()),
+			zap.Int("latest_user_message_max_runes", h.config.MultiAgent.EinoMiddleware.LatestUserMessageMaxRunesEffective()),
+			zap.Int("latest_user_message_head_runes", h.config.MultiAgent.EinoMiddleware.LatestUserMessageHeadRunesEffective()),
+			zap.Int("latest_user_message_tail_runes", h.config.MultiAgent.EinoMiddleware.LatestUserMessageTailRunesEffective()),
 			zap.Int("tool_search_always_visible_tools", len(h.config.MultiAgent.EinoMiddleware.ToolSearchAlwaysVisibleTools)),
 		)
 	}
@@ -1932,6 +1977,11 @@ func updateMultiAgentConfig(doc *yaml.Node, cfg config.MultiAgentConfig) {
 	setBoolInMap(maNode, "batch_use_multi_agent", cfg.BatchUseMultiAgent)
 	setIntInMap(maNode, "plan_execute_loop_max_iterations", cfg.PlanExecuteLoopMaxIterations)
 	mwNode := ensureMap(maNode, "eino_middleware")
+	setIntInMap(mwNode, "summarization_user_intent_ledger_max_runes", cfg.EinoMiddleware.SummarizationUserIntentLedgerMaxRunesEffective())
+	setIntInMap(mwNode, "summarization_user_intent_ledger_entry_max_runes", cfg.EinoMiddleware.SummarizationUserIntentLedgerEntryMaxRunesEffective())
+	setIntInMap(mwNode, "latest_user_message_max_runes", cfg.EinoMiddleware.LatestUserMessageMaxRunesEffective())
+	setIntInMap(mwNode, "latest_user_message_head_runes", cfg.EinoMiddleware.LatestUserMessageHeadRunesEffective())
+	setIntInMap(mwNode, "latest_user_message_tail_runes", cfg.EinoMiddleware.LatestUserMessageTailRunesEffective())
 	setFlowStringSliceInMap(mwNode, "tool_search_always_visible_tools", dedupeToolNameList(cfg.EinoMiddleware.ToolSearchAlwaysVisibleTools))
 }
 
