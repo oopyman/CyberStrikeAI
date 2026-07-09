@@ -72,6 +72,56 @@ func TestPersistAuthPasswordDoesNotTreatQuotedHashAsComment(t *testing.T) {
 	}
 }
 
+func TestEnsureLocalConfigCreatesFromExampleWithGeneratedPassword(t *testing.T) {
+	dir := t.TempDir()
+	examplePath := filepath.Join(dir, "config.example.yaml")
+	configPath := filepath.Join(dir, "config.yaml")
+
+	example := []byte(`auth:
+  password: "change-me-use-a-long-random-password"
+  session_duration_hours: 12
+server:
+  host: 127.0.0.1
+  port: 8080
+`)
+	if err := os.WriteFile(examplePath, example, 0644); err != nil {
+		t.Fatalf("write example: %v", err)
+	}
+
+	result, err := EnsureLocalConfig(configPath)
+	if err != nil {
+		t.Fatalf("EnsureLocalConfig: %v", err)
+	}
+	if !result.Created {
+		t.Fatal("Created = false, want true")
+	}
+	if result.GeneratedPassword == "" {
+		t.Fatal("GeneratedPassword is empty")
+	}
+	if result.ExamplePath != examplePath {
+		t.Fatalf("ExamplePath = %q, want %q", result.ExamplePath, examplePath)
+	}
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load generated config: %v", err)
+	}
+	if cfg.Auth.Password == "change-me-use-a-long-random-password" {
+		t.Fatal("auth.password still contains the template placeholder")
+	}
+	if cfg.Auth.Password != result.GeneratedPassword {
+		t.Fatalf("Auth.Password = %q, want generated password %q", cfg.Auth.Password, result.GeneratedPassword)
+	}
+
+	second, err := EnsureLocalConfig(configPath)
+	if err != nil {
+		t.Fatalf("EnsureLocalConfig existing: %v", err)
+	}
+	if second.Created {
+		t.Fatal("Created = true for existing config, want false")
+	}
+}
+
 func TestHitlAuditModelEffectiveFallsBackToMainConfig(t *testing.T) {
 	main := OpenAIConfig{
 		Provider: "openai",

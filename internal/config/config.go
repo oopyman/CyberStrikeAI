@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -39,6 +40,12 @@ type Config struct {
 	MultiAgent  MultiAgentConfig      `yaml:"multi_agent,omitempty" json:"multi_agent,omitempty"`
 	Project     ProjectConfig         `yaml:"project,omitempty" json:"project,omitempty"`
 	Vision      VisionConfig          `yaml:"vision,omitempty" json:"vision,omitempty"`
+}
+
+type EnsureLocalConfigResult struct {
+	Created           bool
+	GeneratedPassword string
+	ExamplePath       string
 }
 
 const (
@@ -1101,6 +1108,64 @@ func Load(path string) (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+func EnsureLocalConfig(path string) (EnsureLocalConfigResult, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		path = "config.yaml"
+	}
+
+	if _, err := os.Stat(path); err == nil {
+		return EnsureLocalConfigResult{}, nil
+	} else if err != nil && !os.IsNotExist(err) {
+		return EnsureLocalConfigResult{}, fmt.Errorf("检查配置文件失败: %w", err)
+	}
+
+	examplePath := filepath.Join(filepath.Dir(path), "config.example.yaml")
+	if _, err := os.Stat(examplePath); err != nil {
+		if os.IsNotExist(err) {
+			if alt := "config.example.yaml"; examplePath != alt {
+				if _, altErr := os.Stat(alt); altErr == nil {
+					examplePath = alt
+				} else {
+					return EnsureLocalConfigResult{}, fmt.Errorf("配置文件 %s 不存在，且未找到模板 %s", path, examplePath)
+				}
+			} else {
+				return EnsureLocalConfigResult{}, fmt.Errorf("配置文件 %s 不存在，且未找到模板 %s", path, examplePath)
+			}
+		} else {
+			return EnsureLocalConfigResult{}, fmt.Errorf("检查配置模板失败: %w", err)
+		}
+	}
+
+	data, err := os.ReadFile(examplePath)
+	if err != nil {
+		return EnsureLocalConfigResult{}, fmt.Errorf("读取配置模板失败: %w", err)
+	}
+
+	if dir := filepath.Dir(path); dir != "." && dir != "" {
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			return EnsureLocalConfigResult{}, fmt.Errorf("创建配置目录失败: %w", err)
+		}
+	}
+	if err := os.WriteFile(path, data, fs.FileMode(0600)); err != nil {
+		return EnsureLocalConfigResult{}, fmt.Errorf("创建配置文件失败: %w", err)
+	}
+
+	password, err := generateStrongPassword(24)
+	if err != nil {
+		return EnsureLocalConfigResult{}, fmt.Errorf("生成默认密码失败: %w", err)
+	}
+	if err := PersistAuthPassword(path, password); err != nil {
+		return EnsureLocalConfigResult{}, fmt.Errorf("写入默认密码失败: %w", err)
+	}
+
+	return EnsureLocalConfigResult{
+		Created:           true,
+		GeneratedPassword: password,
+		ExamplePath:       examplePath,
+	}, nil
 }
 
 func generateStrongPassword(length int) (string, error) {
