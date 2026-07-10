@@ -251,41 +251,118 @@ function resolveUserEffectiveAccess(user) {
     return { userRoles, effectivePermissions, permissionsByModule, effectiveScope, assignmentCount };
 }
 
-function toggleRbacEffectivePermissions() {
-    rbacState.showEffectivePermissions = !rbacState.showEffectivePermissions;
-    renderRbacEffectivePermissions(selectedRbacUser());
+let rbacPermissionsPopoverDocBound = false;
+
+function positionRbacPermissionsPopover() {
+    const popover = document.getElementById('rbac-permissions-popover');
+    const btn = document.querySelector('.rbac-summary-count--interactive');
+    if (!popover || !btn || popover.hidden) return;
+    const rect = btn.getBoundingClientRect();
+    const width = Math.min(380, window.innerWidth - 32);
+    let left = rect.left;
+    if (left + width > window.innerWidth - 16) left = window.innerWidth - width - 16;
+    left = Math.max(16, left);
+    const top = Math.min(rect.bottom + 8, window.innerHeight - 16);
+    popover.style.width = `${width}px`;
+    popover.style.left = `${left}px`;
+    popover.style.top = `${top}px`;
+    const arrowLeft = Math.min(Math.max(rect.left + rect.width / 2 - left - 5, 12), width - 22);
+    popover.style.setProperty('--rbac-popover-arrow-left', `${arrowLeft}px`);
 }
 
-function renderRbacEffectivePermissions(user) {
-    const box = document.getElementById('rbac-effective-permissions');
-    if (!box) return;
-    if (!user || !rbacState.showEffectivePermissions) {
-        box.hidden = true;
-        box.innerHTML = '';
-        return;
+function onRbacPermissionsPopoverReposition() {
+    if (rbacState.showEffectivePermissions) positionRbacPermissionsPopover();
+}
+
+function setRbacPermissionsPopoverOpen(open) {
+    rbacState.showEffectivePermissions = open;
+    const popover = document.getElementById('rbac-permissions-popover');
+    const btn = document.querySelector('.rbac-summary-count--interactive');
+    if (popover) popover.hidden = !open;
+    if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) {
+        requestAnimationFrame(() => positionRbacPermissionsPopover());
     }
+}
+
+function closeRbacPermissionsPopover() {
+    setRbacPermissionsPopoverOpen(false);
+}
+
+function toggleRbacEffectivePermissions(ev) {
+    if (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+    }
+    const opening = !rbacState.showEffectivePermissions;
+    if (opening) renderRbacEffectivePermissionsContent(selectedRbacUser());
+    setRbacPermissionsPopoverOpen(opening);
+}
+
+function onRbacPermissionsPopoverPointerDown(ev) {
+    if (!rbacState.showEffectivePermissions) return;
+    const popover = document.getElementById('rbac-permissions-popover');
+    const btn = document.querySelector('.rbac-summary-count--interactive');
+    if (popover && popover.contains(ev.target)) return;
+    if (btn && btn.contains(ev.target)) return;
+    closeRbacPermissionsPopover();
+}
+
+function bindRbacPermissionsPopoverDismiss() {
+    if (rbacPermissionsPopoverDocBound) return;
+    rbacPermissionsPopoverDocBound = true;
+    document.addEventListener('mousedown', onRbacPermissionsPopoverPointerDown);
+    document.addEventListener('keydown', ev => {
+        if (ev.key === 'Escape' && rbacState.showEffectivePermissions) closeRbacPermissionsPopover();
+    });
+    window.addEventListener('resize', onRbacPermissionsPopoverReposition);
+    window.addEventListener('scroll', onRbacPermissionsPopoverReposition, true);
+}
+
+function renderRbacEffectivePermissionsContent(user) {
+    const popover = document.getElementById('rbac-permissions-popover');
+    if (!popover || !user) return;
     const access = resolveUserEffectiveAccess(user);
     const modules = Object.keys(access.permissionsByModule).sort();
     if (!modules.length) {
-        box.hidden = false;
-        box.innerHTML = `<div class="rbac-empty"><strong>${rbacT('rbac.empty.noEffectivePermissions', '暂无有效权限')}</strong><span>${rbacEscape(rbacT('rbac.empty.assignRoleFirst', '分配角色后即可查看权限明细'))}</span></div>`;
+        popover.innerHTML = `<div class="rbac-permissions-popover-inner"><div class="rbac-empty"><strong>${rbacT('rbac.empty.noEffectivePermissions', '暂无有效权限')}</strong><span>${rbacEscape(rbacT('rbac.empty.assignRoleFirst', '分配角色后即可查看权限明细'))}</span></div></div>`;
         return;
     }
-    box.hidden = false;
-    box.innerHTML = `
-        <div class="rbac-effective-permissions-head">
-            <strong>${rbacEscape(rbacT('rbac.effectivePermissionsDetail', '有效权限明细'))}</strong>
-            <button type="button" class="btn-link btn-small" onclick="toggleRbacEffectivePermissions()">${rbacEscape(rbacT('common.close', '关闭'))}</button>
-        </div>
-        <div class="rbac-effective-permissions-body">
-            ${modules.map(module => `
-                <section class="rbac-effective-module">
-                    <h4>${rbacEscape(rbacPermissionModuleLabel(module))}<span>${access.permissionsByModule[module].length}</span></h4>
-                    <div class="rbac-effective-permission-tags">
-                        ${access.permissionsByModule[module].sort().map(key => `<span title="${rbacEscape(rbacPermissionLabel(key))}">${rbacEscape(rbacPermissionLabel(key))}</span>`).join('')}
-                    </div>
-                </section>`).join('')}
+    popover.innerHTML = `
+        <div class="rbac-permissions-popover-inner">
+            <div class="rbac-effective-permissions-head">
+                <strong>${rbacEscape(rbacT('rbac.effectivePermissionsDetail', '有效权限明细'))}</strong>
+                <span class="rbac-permissions-popover-count">${access.effectivePermissions.size}</span>
+            </div>
+            <div class="rbac-effective-permissions-body">
+                ${modules.map(module => `
+                    <section class="rbac-effective-module">
+                        <h4>${rbacEscape(rbacPermissionModuleLabel(module))}<span>${access.permissionsByModule[module].length}</span></h4>
+                        <div class="rbac-effective-permission-tags">
+                            ${access.permissionsByModule[module].sort().map(key => `<span title="${rbacEscape(rbacPermissionLabel(key))}">${rbacEscape(rbacPermissionLabel(key))}</span>`).join('')}
+                        </div>
+                    </section>`).join('')}
+            </div>
         </div>`;
+}
+
+function renderRbacEffectivePermissions(user) {
+    const popover = document.getElementById('rbac-permissions-popover');
+    const btn = document.querySelector('.rbac-summary-count--interactive');
+    if (!popover) return;
+    if (!user) {
+        popover.hidden = true;
+        popover.innerHTML = '';
+        rbacState.showEffectivePermissions = false;
+        if (btn) btn.setAttribute('aria-expanded', 'false');
+        return;
+    }
+    if (btn) btn.setAttribute('aria-expanded', rbacState.showEffectivePermissions ? 'true' : 'false');
+    popover.hidden = !rbacState.showEffectivePermissions;
+    if (rbacState.showEffectivePermissions) {
+        renderRbacEffectivePermissionsContent(user);
+        requestAnimationFrame(() => positionRbacPermissionsPopover());
+    }
 }
 
 function rbacRoleIsSystem(role) {
@@ -306,6 +383,7 @@ async function initPlatformRbacPage() {
     if (typeof window !== 'undefined' && window.i18nReady) await window.i18nReady;
     const typeInput = document.getElementById('rbac-assignment-type');
     if (typeInput) rbacState.assignmentResourceType = typeInput.value || 'conversation';
+    bindRbacPermissionsPopoverDismiss();
     await rbacRun(loadPlatformRbac, rbacT('rbac.errors.loadFailed', '加载失败'));
     initRbacSelects();
 }
@@ -562,12 +640,17 @@ function renderRbacRoles() {
         } else {
             const access = resolveUserEffectiveAccess(user);
             const scope = rbacScopeInfo(access.effectiveScope);
-            const permissionsToggle = access.effectivePermissions.size
-                ? ` <button type="button" class="btn-link btn-small rbac-summary-toggle" onclick="toggleRbacEffectivePermissions()">${rbacEscape(rbacT(rbacState.showEffectivePermissions ? 'rbac.hidePermissions' : 'rbac.viewPermissionsDetail', rbacState.showEffectivePermissions ? '收起明细' : '查看明细'))}</button>`
-                : '';
+            const permissionCount = access.effectivePermissions.size;
+            const permissionCountHtml = permissionCount
+                ? `<button type="button" class="rbac-summary-count rbac-summary-count--interactive" aria-expanded="${rbacState.showEffectivePermissions ? 'true' : 'false'}" aria-haspopup="dialog" aria-controls="rbac-permissions-popover" title="${rbacEscape(rbacT('rbac.viewPermissionsDetail', '查看明细'))}" onclick="toggleRbacEffectivePermissions(event)">${permissionCount}</button>`
+                : `<strong class="rbac-summary-count">${permissionCount}</strong>`;
             summary.innerHTML = `
                 <div><span>${rbacT('rbac.roles', '角色')}</span><strong>${access.userRoles.length}</strong></div>
-                <div class="rbac-summary-permissions"><span>${rbacT('rbac.effectivePermissions', '有效权限')}</span><strong>${access.effectivePermissions.size}</strong>${permissionsToggle}</div>
+                <div class="rbac-summary-permissions">
+                    <span>${rbacT('rbac.effectivePermissions', '有效权限')}</span>
+                    ${permissionCountHtml}
+                    <div id="rbac-permissions-popover" class="rbac-permissions-popover" role="dialog" aria-label="${rbacEscape(rbacT('rbac.effectivePermissionsDetail', '有效权限明细'))}" hidden></div>
+                </div>
                 <div><span>${rbacT('rbac.effectiveScope', '有效资源范围')}</span><strong title="${rbacEscape(scope.hint)}">${rbacEscape(scope.label)}</strong></div>
                 <div><span>${rbacT('rbac.metricAssignments', '资源授权')}</span><strong>${access.assignmentCount}</strong></div>
                 `;

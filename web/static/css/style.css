@@ -36249,16 +36249,88 @@ html[data-theme="dark"] .form-group select {
     position: relative;
 }
 
-.rbac-summary-toggle {
-    margin-left: 4px;
-    vertical-align: middle;
+.rbac-summary-count {
+    display: block;
+    margin-top: 3px;
+    color: var(--text-primary);
+    font-size: 0.9375rem;
+    font-weight: 700;
+    line-height: 1.2;
 }
 
-.rbac-effective-permissions {
-    margin: 0 16px 12px;
+.rbac-summary-count--interactive {
+    display: inline-flex;
+    align-items: center;
+    margin-top: 3px;
+    padding: 0 0 1px;
+    border: none;
+    border-bottom: 1px dashed color-mix(in srgb, var(--text-secondary) 55%, transparent);
+    border-radius: 0;
+    background: none;
+    color: var(--text-secondary);
+    font-size: 0.9375rem;
+    font-weight: 700;
+    line-height: 1.2;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.rbac-summary-count--interactive:hover {
+    color: var(--text-primary);
+    border-bottom-color: color-mix(in srgb, var(--text-secondary) 80%, transparent);
+}
+
+.rbac-summary-count--interactive[aria-expanded="true"] {
+    color: var(--text-primary);
+    border-bottom-color: var(--text-secondary);
+    border-bottom-style: solid;
+}
+
+.rbac-summary-count--interactive:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--text-secondary) 35%, transparent);
+    outline-offset: 3px;
+}
+
+.rbac-permissions-popover {
+    position: fixed;
+    z-index: 220;
+    width: min(380px, calc(100vw - 32px));
+}
+
+.rbac-permissions-popover[hidden] {
+    display: none !important;
+}
+
+.rbac-permissions-popover-inner {
+    position: relative;
+    overflow: hidden;
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: 10px;
     background: var(--bg-primary);
+    box-shadow: var(--shadow-md, 0 8px 24px rgba(15, 23, 42, 0.12));
+}
+
+.rbac-permissions-popover-inner::before {
+    content: '';
+    position: absolute;
+    top: -5px;
+    left: var(--rbac-popover-arrow-left, 18px);
+    width: 10px;
+    height: 10px;
+    background: var(--bg-primary);
+    border-left: 1px solid var(--border-color);
+    border-top: 1px solid var(--border-color);
+    transform: rotate(45deg);
+}
+
+.rbac-permissions-popover-count {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.rbac-permissions-popover .rbac-effective-permissions-body {
+    max-height: min(320px, calc(100vh - 180px));
 }
 
 .rbac-effective-permissions-head,
@@ -36740,6 +36812,11 @@ html[data-theme="dark"] .form-group select {
 }
 
 .rbac-panel-detail .rbac-selected-summary strong {
+    margin-top: 2px;
+    font-size: 0.875rem;
+}
+
+.rbac-panel-detail .rbac-selected-summary .rbac-summary-count--interactive {
     margin-top: 2px;
     font-size: 0.875rem;
 }
