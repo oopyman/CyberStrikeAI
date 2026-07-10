@@ -8,6 +8,7 @@
 - [Contributing Guide](contributing-guide.md): checklists for APIs, config, tools, frontend, DB, high-risk features, and docs.
 - [Configuration Reference](configuration.md): `config.yaml` fields, hot-apply boundaries, recommended values, and source anchors.
 - [Security Model](security-model.md): trust boundaries, HITL, tool execution, C2/WebShell, and data safety.
+- [RBAC Administration](rbac.md): platform users, system/custom roles, permission catalog, per-permission scopes, resource assignments, Agent/MCP/robot boundaries, and API examples.
 - [Architecture](architecture.md): request flow, module relationships, complexity hotspots, and design trade-offs.
 - [API Reference](api-reference.md): authentication, OpenAPI, SSE, stability tiers, and common endpoints.
 - [Troubleshooting](troubleshooting.md): diagnostic order, minimal commands, common misdiagnoses, and issue template.

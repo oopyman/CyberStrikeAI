@@ -8,6 +8,7 @@
 - [贡献规范](contributing-guide.md)：新增 API、配置、工具、前端、数据库、高风险能力和文档的 checklist。
 - [配置参考](configuration.md)：`config.yaml` 字段、热应用边界、参数建议和源码锚点。
 - [安全模型](security-model.md)：信任边界、HITL、工具执行、C2/WebShell 与数据安全。
+- [RBAC 权限管理](rbac.md)：平台用户、系统/自定义角色、权限目录、逐权限 Scope、资源授权、Agent/MCP/机器人边界与 API 示例。
 - [架构说明](architecture.md)：请求路径、模块关系、复杂度热点和设计取舍。
 - [API 参考](api-reference.md)：认证、OpenAPI、SSE、稳定性分层和常用接口。
 - [排错指南](troubleshooting.md)：诊断顺序、最小命令、常见误判和故障模板。

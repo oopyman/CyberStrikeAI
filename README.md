@@ -127,6 +127,7 @@ If CyberStrikeAI helps you, you can support the project via **WeChat Pay** or **
 - 🔗 Attack-chain intelligence with graph views, risk scoring, project facts, and step-by-step replay
 - 🧑‍⚖️ Human-in-the-loop governance with approval modes, allowlists, audit-agent review, and traceable decisions
 - 🔒 Password-protected web UI, audit logs, SQLite persistence, and operational evidence retention
+- 🔐 **Platform RBAC** with multi-user accounts, system/custom roles, per-permission scopes (`all` / `assigned` / `own`), ownership, and explicit assignments enforced across APIs, Agents, MCP, background jobs, and chatbots; see the [RBAC administration guide](docs/en-US/rbac.md)
 - 📚 Knowledge base (RAG): **Eino MultiQuery** query rewrite + multi-path vector retrieval + **HTTP rerank** (DashScope `gte-rerank` / Cohere-compatible) + post-processing (dedupe, budget); **Eino Compose** indexing pipeline
 - 📁 Conversation grouping with pinning, rename, and batch management
 - 📂 **Project management**: shared facts (blackboard) across sessions, `upsert_project_fact` + `links` to chain paths; attack-chain and project fact graph views
@@ -649,10 +650,11 @@ enabled: true
 - [API recipes](docs/en-US/api-recipes.md): examples for login, Agent, streaming, multi-agent, uploads, vulnerabilities, KB, and audit export.
 - [Configuration reference](docs/en-US/configuration.md): main `config.yaml` sections, recommended values, and update guidance.
 - [Security model](docs/en-US/security-model.md): authentication, tool execution, HITL, audit, C2/WebShell, and data safety boundaries.
+- [RBAC administration](docs/en-US/rbac.md): platform users, system/custom roles, permission catalog, per-permission scopes, resource assignments, Agent/MCP/robot boundaries, and API examples.
 - [API reference](docs/en-US/api-reference.md): OpenAPI, authentication, Agent, projects, knowledge base, C2, WebShell, and other API entry points.
 - [Multi-agent mode (Eino)](docs/en-US/MULTI_AGENT_EINO.md): **Deep**, **Plan-Execute**, **Supervisor**, `agents/*.md`, `eino_skills` / `eino_middleware`, APIs, and chat/stream behavior.
 - [Graph orchestration guide](docs/en-US/workflow-graph.md): visual workflow design, node configuration, `previous` / `outputs` variable passing, and role binding.
-- [Robot / Chatbot guide](docs/en-US/robot.md): Setup, commands, and troubleshooting for WeChat, WeCom, DingTalk, Lark, Telegram, Slack, Discord, and QQ Bot.
+- [Robot / Chatbot guide](docs/en-US/robot.md): Platform setup, RBAC user-binding/service-account modes, sender allowlists, commands, verification, and troubleshooting.
 - [HITL best practices](docs/en-US/hitl-best-practices.md): reviewer modes, allowlists, Audit Agent prompts, and separate small-model configuration.
 
 ## Project Layout
