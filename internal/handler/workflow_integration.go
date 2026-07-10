@@ -36,6 +36,7 @@ func (h *AgentHandler) roleForWorkflow(req *ChatRequest) (config.RoleConfig, boo
 }
 
 func (h *AgentHandler) runRoleWorkflowStreamIfBound(
+	c *gin.Context,
 	req *ChatRequest,
 	prep *multiAgentPrepared,
 	sendEvent func(eventType, message string, data interface{}),
@@ -60,7 +61,10 @@ func (h *AgentHandler) runRoleWorkflowStreamIfBound(
 		}
 	}()
 
-	baseCtx, cancelWithCause := context.WithCancelCause(context.Background())
+	if c == nil || c.Request == nil {
+		return false
+	}
+	baseCtx, cancelWithCause := context.WithCancelCause(detachedAgentContext(c.Request.Context()))
 	defer cancelWithCause(nil)
 	taskCtx, timeoutCancel := context.WithTimeout(baseCtx, 600*time.Minute)
 	defer timeoutCancel()

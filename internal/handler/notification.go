@@ -494,14 +494,16 @@ func buildPlaceholders(n int) string {
 	return strings.Join(out, ",")
 }
 
-func (h *NotificationHandler) readStatesByIDs(ids []string) (map[string]bool, error) {
+func (h *NotificationHandler) readStatesByIDs(userID string, ids []string) (map[string]bool, error) {
 	result := make(map[string]bool, len(ids))
-	if len(ids) == 0 {
+	userID = strings.TrimSpace(userID)
+	if len(ids) == 0 || userID == "" {
 		return result, nil
 	}
 	holders := buildPlaceholders(len(ids))
-	query := "SELECT event_id FROM notification_reads WHERE event_id IN (" + holders + ")"
-	args := make([]interface{}, 0, len(ids))
+	query := "SELECT event_id FROM notification_reads_by_user WHERE user_id = ? AND event_id IN (" + holders + ")"
+	args := make([]interface{}, 0, len(ids)+1)
+	args = append(args, userID)
 	for _, id := range ids {
 		args = append(args, id)
 	}
@@ -520,7 +522,7 @@ func (h *NotificationHandler) readStatesByIDs(ids []string) (map[string]bool, er
 	return result, nil
 }
 
-func (h *NotificationHandler) applyReadStates(items []NotificationSummaryItem) ([]NotificationSummaryItem, error) {
+func (h *NotificationHandler) applyReadStates(userID string, items []NotificationSummaryItem) ([]NotificationSummaryItem, error) {
 	markableIDs := make([]string, 0, len(items))
 	for _, item := range items {
 		if item.Actionable {
@@ -528,7 +530,7 @@ func (h *NotificationHandler) applyReadStates(items []NotificationSummaryItem) (
 		}
 		markableIDs = append(markableIDs, item.ID)
 	}
-	readMap, err := h.readStatesByIDs(markableIDs)
+	readMap, err := h.readStatesByIDs(userID, markableIDs)
 	if err != nil {
 		return items, err
 	}
@@ -585,34 +587,38 @@ func createNotificationReadTableIfNeeded(db *database.DB) error {
 		return fmt.Errorf("db is nil")
 	}
 	_, err := db.Exec(`
-		CREATE TABLE IF NOT EXISTS notification_reads (
-			event_id TEXT PRIMARY KEY,
-			read_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		CREATE TABLE IF NOT EXISTS notification_reads_by_user (
+			user_id TEXT NOT NULL,
+			event_id TEXT NOT NULL,
+			read_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY(user_id, event_id)
 		);
 	`)
 	if err != nil {
 		return err
 	}
-	_, idxErr := db.Exec(`CREATE INDEX IF NOT EXISTS idx_notification_reads_read_at ON notification_reads(read_at DESC);`)
+	_, idxErr := db.Exec(`CREATE INDEX IF NOT EXISTS idx_notification_reads_user_read_at ON notification_reads_by_user(user_id, read_at DESC);`)
 	return idxErr
 }
 
-func pruneNotificationReads(db *database.DB, maxRows int) error {
+func pruneNotificationReads(db *database.DB, userID string, maxRows int) error {
 	if db == nil {
 		return fmt.Errorf("db is nil")
 	}
-	if maxRows <= 0 {
+	userID = strings.TrimSpace(userID)
+	if maxRows <= 0 || userID == "" {
 		return nil
 	}
 	_, err := db.Exec(`
-		DELETE FROM notification_reads
-		WHERE event_id NOT IN (
+		DELETE FROM notification_reads_by_user
+		WHERE user_id = ? AND event_id NOT IN (
 			SELECT event_id
-			FROM notification_reads
+			FROM notification_reads_by_user
+			WHERE user_id = ?
 			ORDER BY read_at DESC, rowid DESC
 			LIMIT ?
 		)
-	`, maxRows)
+	`, userID, userID, maxRows)
 	return err
 }
 
@@ -655,6 +661,11 @@ func (h *NotificationHandler) MarkRead(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"ok": true, "marked": 0})
 		return
 	}
+	session, ok := security.CurrentSession(c)
+	if !ok || strings.TrimSpace(session.UserID) == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authenticated user"})
+		return
+	}
 	tx, err := h.db.Begin()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to begin transaction"})
@@ -664,9 +675,9 @@ func (h *NotificationHandler) MarkRead(c *gin.Context) {
 		_ = tx.Rollback()
 	}()
 	stmt, err := tx.Prepare(`
-		INSERT INTO notification_reads(event_id, read_at)
-		VALUES(?, CURRENT_TIMESTAMP)
-		ON CONFLICT(event_id) DO UPDATE SET read_at = CURRENT_TIMESTAMP
+		INSERT INTO notification_reads_by_user(user_id, event_id, read_at)
+		VALUES(?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(user_id, event_id) DO UPDATE SET read_at = CURRENT_TIMESTAMP
 	`)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to prepare statement"})
@@ -679,7 +690,7 @@ func (h *NotificationHandler) MarkRead(c *gin.Context) {
 		if !ok {
 			continue
 		}
-		if _, err := stmt.Exec(id); err != nil {
+		if _, err := stmt.Exec(session.UserID, id); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to mark read"})
 			return
 		}
@@ -689,7 +700,7 @@ func (h *NotificationHandler) MarkRead(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to commit read marks"})
 		return
 	}
-	if err := pruneNotificationReads(h.db, notificationReadMaxRows); err != nil {
+	if err := pruneNotificationReads(h.db, session.UserID, notificationReadMaxRows); err != nil {
 		h.logger.Warn("裁剪通知已读记录失败", zap.Error(err))
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true, "marked": marked})
@@ -776,7 +787,8 @@ func (h *NotificationHandler) GetSummary(c *gin.Context) {
 	items = append(items, longRunningItems...)
 	items = append(items, completedItems...)
 
-	items, err := h.applyReadStates(items)
+	session, _ := security.CurrentSession(c)
+	items, err := h.applyReadStates(session.UserID, items)
 	if err != nil {
 		h.logger.Warn("加载通知已读状态失败", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load notification read states"})

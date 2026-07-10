@@ -1,11 +1,13 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"cyberstrike-ai/internal/audit"
+	"cyberstrike-ai/internal/authctx"
 	"cyberstrike-ai/internal/database"
 	"cyberstrike-ai/internal/security"
 
@@ -34,15 +36,22 @@ func (h *RBACHandler) SetAuthManager(m *security.AuthManager) {
 
 func (h *RBACHandler) Me(c *gin.Context) {
 	session, _ := security.CurrentSession(c)
+	resolvedScope := session.Scope
+	permissionScopes := session.PermissionScopes
+	if principal, ok := authctx.PrincipalFromContext(c.Request.Context()); ok {
+		resolvedScope = principal.Scope
+		permissionScopes = principal.PermissionScopes
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"user": gin.H{
 			"id":           session.UserID,
 			"username":     session.Username,
 			"display_name": session.DisplayName,
 		},
-		"roles":       session.Roles,
-		"permissions": permissionKeys(session.Permissions),
-		"scope":       session.Scope,
+		"roles":             session.Roles,
+		"permissions":       permissionKeys(session.Permissions),
+		"scope":             resolvedScope,
+		"permission_scopes": permissionScopes,
 	})
 }
 
@@ -96,9 +105,26 @@ type upsertRBACRoleRequest struct {
 	Permissions []string `json:"permissions"`
 }
 
+func validateRBACPermissionKeys(keys []string) error {
+	for _, key := range keys {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if _, ok := security.PermissionCatalog[key]; !ok {
+			return fmt.Errorf("未知权限: %s", key)
+		}
+	}
+	return nil
+}
+
 func (h *RBACHandler) CreateRole(c *gin.Context) {
 	var req upsertRBACRoleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := validateRBACPermissionKeys(req.Permissions); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -126,6 +152,10 @@ func (h *RBACHandler) UpdateRole(c *gin.Context) {
 	}
 	var req upsertRBACRoleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := validateRBACPermissionKeys(req.Permissions); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}

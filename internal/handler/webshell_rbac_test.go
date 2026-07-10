@@ -40,6 +40,18 @@ func TestWebshellExecRequiresConnectionAccessWhenConnectionIDProvided(t *testing
 	}
 }
 
+func TestWebshellExecRejectsAdHocURLWithoutConnectionID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	_, user, _, _ := setupWebshellRBACTest(t)
+	handler := NewWebShellHandler(zap.NewNop(), nil)
+	w := performWebshellJSON(user, http.MethodPost, "/api/webshell/exec", map[string]interface{}{
+		"url": "http://127.0.0.1/admin", "command": "id",
+	}, handler.Exec)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("ad-hoc URL status = %d, want %d: %s", w.Code, http.StatusForbidden, w.Body.String())
+	}
+}
+
 func TestWebshellFileOpRequiresConnectionAccessWhenConnectionIDProvided(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db, user, _, hidden := setupWebshellRBACTest(t)

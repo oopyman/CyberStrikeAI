@@ -13,11 +13,11 @@ import (
 )
 
 // rebindEinoRunningTask 中断并继续 / 空正文续跑：重建 cancel 链与超时 ctx，保持任务 running。
-func (h *AgentHandler) rebindEinoRunningTask(conversationID string, timeoutCancel context.CancelFunc) (context.Context, context.CancelCauseFunc, context.Context, context.CancelFunc) {
+func (h *AgentHandler) rebindEinoRunningTask(parent context.Context, conversationID string, timeoutCancel context.CancelFunc) (context.Context, context.CancelCauseFunc, context.Context, context.CancelFunc) {
 	if timeoutCancel != nil {
 		timeoutCancel()
 	}
-	baseCtx, cancelWithCause := context.WithCancelCause(context.Background())
+	baseCtx, cancelWithCause := context.WithCancelCause(detachedAgentContext(parent))
 	h.tasks.BindTaskCancel(conversationID, cancelWithCause)
 	taskCtx, newTimeoutCancel := context.WithTimeout(baseCtx, 600*time.Minute)
 	h.tasks.UpdateTaskStatus(conversationID, "running")

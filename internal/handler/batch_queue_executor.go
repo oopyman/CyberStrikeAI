@@ -11,6 +11,7 @@ import (
 
 	"cyberstrike-ai/internal/agent"
 	"cyberstrike-ai/internal/audit"
+	"cyberstrike-ai/internal/authctx"
 	"cyberstrike-ai/internal/config"
 	"cyberstrike-ai/internal/mcp"
 	"cyberstrike-ai/internal/multiagent"
@@ -109,6 +110,13 @@ func (h *AgentHandler) tryFinalizeBatchQueue(queueID string) {
 
 // executeOneBatchSubTask 执行单条批量子任务（各自独立会话）。
 func (h *AgentHandler) executeOneBatchSubTask(queueID string, queue *BatchTaskQueue, task *BatchTask) {
+	ownerUserID := h.db.GetResourceOwner("batch_task", queueID)
+	access, accessErr := h.db.ResolveRBACAccess(ownerUserID)
+	if accessErr != nil || access == nil || !access.User.Enabled {
+		h.batchTaskManager.UpdateTaskStatus(queueID, task.ID, BatchTaskStatusFailed, "", "队列所有者不存在或已禁用")
+		return
+	}
+	principal := authctx.NewPrincipalWithScopes(access.User.ID, access.User.Username, access.Scope, access.Permissions, access.PermissionScopes)
 	title := safeTruncateString(task.Message, 50)
 	batchMeta := audit.ConversationCreateMeta("batch_task")
 	batchMeta.ProjectID = effectiveProjectID(h.config, queue.ProjectID)
@@ -119,6 +127,8 @@ func (h *AgentHandler) executeOneBatchSubTask(queueID string, queue *BatchTaskQu
 		return
 	}
 	conversationID := conv.ID
+	_ = h.db.SetResourceOwner("conversation", conversationID, access.User.ID)
+	_ = h.db.AssignResourceToUser(access.User.ID, "conversation", conversationID)
 
 	h.batchTaskManager.UpdateTaskStatusWithConversationID(queueID, task.ID, BatchTaskStatusRunning, "", "", conversationID)
 
@@ -156,7 +166,8 @@ func (h *AgentHandler) executeOneBatchSubTask(queueID string, queue *BatchTaskQu
 
 	h.logger.Info("执行批量任务", zap.String("queueId", queueID), zap.String("taskId", task.ID), zap.String("message", task.Message), zap.String("role", queue.Role), zap.String("conversationId", conversationID))
 
-	baseCtx, cancelWithCause := context.WithCancelCause(context.Background())
+	principalCtx := authctx.WithPrincipal(context.Background(), principal)
+	baseCtx, cancelWithCause := context.WithCancelCause(principalCtx)
 	taskCtx, timeoutCancel := context.WithTimeout(baseCtx, 6*time.Hour)
 
 	registered := false

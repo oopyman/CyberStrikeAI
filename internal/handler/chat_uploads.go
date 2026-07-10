@@ -13,6 +13,8 @@ import (
 	"unicode/utf8"
 
 	"cyberstrike-ai/internal/audit"
+	"cyberstrike-ai/internal/database"
+	"cyberstrike-ai/internal/security"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -27,6 +29,7 @@ const (
 type ChatUploadsHandler struct {
 	logger *zap.Logger
 	audit  *audit.Service
+	db     *database.DB
 }
 
 // SetAudit wires platform audit logging.
@@ -35,8 +38,32 @@ func (h *ChatUploadsHandler) SetAudit(s *audit.Service) {
 }
 
 // NewChatUploadsHandler 创建处理器
-func NewChatUploadsHandler(logger *zap.Logger) *ChatUploadsHandler {
-	return &ChatUploadsHandler{logger: logger}
+func NewChatUploadsHandler(logger *zap.Logger, databases ...*database.DB) *ChatUploadsHandler {
+	h := &ChatUploadsHandler{logger: logger}
+	if len(databases) > 0 {
+		h.db = databases[0]
+	}
+	return h
+}
+
+func (h *ChatUploadsHandler) pathAllowed(c *gin.Context, relativePath string) bool {
+	session, ok := security.CurrentSession(c)
+	if !ok || h.db == nil {
+		return false
+	}
+	if session.Scope == database.RBACScopeAll {
+		return true
+	}
+	rel := filepath.ToSlash(filepath.Clean(filepath.FromSlash(strings.TrimSpace(relativePath))))
+	rel = strings.Trim(rel, "/")
+	if conversationID, ownerUserID, found := h.db.GetChatUploadArtifact(rel); found {
+		return strings.TrimSpace(ownerUserID) == session.UserID || h.db.UserCanAccessResource(session.UserID, session.Scope, "conversation", conversationID)
+	}
+	parts := strings.Split(strings.Trim(rel, "/"), "/")
+	if len(parts) < 2 || parts[1] == "" || parts[1] == "_manual" {
+		return false
+	}
+	return h.db.UserCanAccessResource(session.UserID, session.Scope, "conversation", parts[1])
 }
 
 func (h *ChatUploadsHandler) absRoot() (string, error) {
@@ -175,6 +202,21 @@ func (h *ChatUploadsHandler) List(c *gin.Context) {
 		}
 		folders = filteredFolders
 	}
+	files = filterSlice(files, func(file ChatUploadFileItem) bool {
+		return h.pathAllowed(c, file.RelativePath)
+	})
+	folders = filterSlice(folders, func(folder string) bool {
+		if h.pathAllowed(c, folder) {
+			return true
+		}
+		prefix := strings.TrimSuffix(folder, "/") + "/"
+		for _, file := range files {
+			if strings.HasPrefix(file.RelativePath, prefix) {
+				return true
+			}
+		}
+		return false
+	})
 	sort.Strings(folders)
 	sort.Slice(files, func(i, j int) bool {
 		return files[i].ModifiedUnix > files[j].ModifiedUnix
@@ -185,6 +227,10 @@ func (h *ChatUploadsHandler) List(c *gin.Context) {
 // Download GET /api/chat-uploads/download?path=...
 func (h *ChatUploadsHandler) Download(c *gin.Context) {
 	p := c.Query("path")
+	if !h.pathAllowed(c, p) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
+		return
+	}
 	abs, err := h.resolveUnderChatUploads(p)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -207,6 +253,10 @@ func (h *ChatUploadsHandler) Delete(c *gin.Context) {
 	var body chatUploadPathBody
 	if err := c.ShouldBindJSON(&body); err != nil || strings.TrimSpace(body.Path) == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
+		return
+	}
+	if !h.pathAllowed(c, body.Path) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
 		return
 	}
 	abs, err := h.resolveUnderChatUploads(body.Path)
@@ -238,6 +288,7 @@ func (h *ChatUploadsHandler) Delete(c *gin.Context) {
 			return
 		}
 	}
+	_ = h.db.DeleteChatUploadArtifactPath(filepath.ToSlash(filepath.Clean(filepath.FromSlash(body.Path))))
 	if h.audit != nil {
 		h.audit.RecordOK(c, "file", "delete", "删除对话附件", "chat_upload", body.Path, nil)
 	}
@@ -271,6 +322,10 @@ func (h *ChatUploadsHandler) Mkdir(c *gin.Context) {
 	parent = strings.Trim(parent, "/")
 	if parent == "." {
 		parent = ""
+	}
+	if !h.pathAllowed(c, parent) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
+		return
 	}
 
 	root, err := h.absRoot()
@@ -327,6 +382,10 @@ func (h *ChatUploadsHandler) Rename(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
 		return
 	}
+	if !h.pathAllowed(c, body.Path) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
+		return
+	}
 	newName := strings.TrimSpace(body.NewName)
 	if newName == "" || strings.ContainsAny(newName, `/\`) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid newName"})
@@ -354,6 +413,8 @@ func (h *ChatUploadsHandler) Rename(c *gin.Context) {
 		return
 	}
 	newRel, _ := filepath.Rel(root, newAbs)
+	oldRel := filepath.ToSlash(filepath.Clean(filepath.FromSlash(body.Path)))
+	_ = h.db.RenameChatUploadArtifactPath(oldRel, filepath.ToSlash(newRel))
 	c.JSON(http.StatusOK, gin.H{"ok": true, "relativePath": filepath.ToSlash(newRel)})
 }
 
@@ -365,6 +426,10 @@ type chatUploadContentBody struct {
 // GetContent GET /api/chat-uploads/content?path=...
 func (h *ChatUploadsHandler) GetContent(c *gin.Context) {
 	p := c.Query("path")
+	if !h.pathAllowed(c, p) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
+		return
+	}
 	abs, err := h.resolveUnderChatUploads(p)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -396,6 +461,10 @@ func (h *ChatUploadsHandler) PutContent(c *gin.Context) {
 	var body chatUploadContentBody
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
+		return
+	}
+	if !h.pathAllowed(c, body.Path) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
 		return
 	}
 	if !utf8.ValidString(body.Content) {
@@ -444,6 +513,10 @@ func (h *ChatUploadsHandler) Upload(c *gin.Context) {
 	var targetDir string
 	targetRel := strings.TrimSpace(c.PostForm("relativeDir"))
 	if targetRel != "" {
+		if !h.pathAllowed(c, targetRel) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
+			return
+		}
 		absDir, err := h.resolveUnderChatUploads(targetRel)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -467,13 +540,17 @@ func (h *ChatUploadsHandler) Upload(c *gin.Context) {
 		targetDir = absDir
 	} else {
 		convID := strings.TrimSpace(c.PostForm("conversationId"))
+		dateStr := time.Now().Format("2006-01-02")
+		if !h.pathAllowed(c, filepath.ToSlash(filepath.Join(dateStr, convID))) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
+			return
+		}
 		convDir := convID
 		if convDir == "" {
 			convDir = "_manual"
 		} else {
 			convDir = strings.ReplaceAll(convDir, string(filepath.Separator), "_")
 		}
-		dateStr := time.Now().Format("2006-01-02")
 		targetDir = filepath.Join(root, dateStr, convDir)
 		if err := os.MkdirAll(targetDir, 0755); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -514,6 +591,16 @@ func (h *ChatUploadsHandler) Upload(c *gin.Context) {
 	}
 	rel, _ := filepath.Rel(root, fullPath)
 	absSaved, _ := filepath.Abs(fullPath)
+	if session, ok := security.CurrentSession(c); ok {
+		conversationID := strings.TrimSpace(c.PostForm("conversationId"))
+		if conversationID == "" {
+			parts := strings.Split(filepath.ToSlash(rel), "/")
+			if len(parts) >= 2 {
+				conversationID = parts[1]
+			}
+		}
+		_ = h.db.UpsertChatUploadArtifact(filepath.ToSlash(rel), conversationID, session.UserID)
+	}
 	if h.audit != nil {
 		h.audit.RecordOK(c, "file", "upload", "上传对话附件", "chat_upload", filepath.ToSlash(rel), map[string]interface{}{
 			"name": unique,

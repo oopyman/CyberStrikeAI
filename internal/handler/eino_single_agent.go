@@ -116,7 +116,7 @@ func (h *AgentHandler) EinoSingleAgentLoopStream(c *gin.Context) {
 			"userMessageId":  prep.UserMessageID,
 		})
 	}
-	if h.runRoleWorkflowStreamIfBound(&req, prep, sendEvent) {
+	if h.runRoleWorkflowStreamIfBound(c, &req, prep, sendEvent) {
 		return
 	}
 
@@ -154,7 +154,7 @@ func (h *AgentHandler) EinoSingleAgentLoopStream(c *gin.Context) {
 	var result *multiagent.RunResult
 	var runErr error
 
-	baseCtx, cancelWithCause = context.WithCancelCause(context.Background())
+	baseCtx, cancelWithCause = context.WithCancelCause(detachedAgentContext(c.Request.Context()))
 	taskCtx, timeoutCancel := context.WithTimeout(baseCtx, 600*time.Minute)
 
 	if _, err := h.tasks.StartTask(conversationID, req.Message, cancelWithCause); err != nil {
@@ -247,7 +247,7 @@ func (h *AgentHandler) EinoSingleAgentLoopStream(c *gin.Context) {
 			if h.tryContinueOnEinoEmptyResponse(taskCtx, mw, conversationID, result, &emptyResponseContinueAttempt, &curHistory, &curFinalMessage, progressCallback) {
 				mainIterationOffset += segmentMainIterationMax
 				timeoutCancel()
-				baseCtx, cancelWithCause, taskCtx, timeoutCancel = h.rebindEinoRunningTask(conversationID, timeoutCancel)
+				baseCtx, cancelWithCause, taskCtx, timeoutCancel = h.rebindEinoRunningTask(taskCtx, conversationID, timeoutCancel)
 				continue
 			}
 			timeoutCancel()
@@ -279,7 +279,7 @@ func (h *AgentHandler) EinoSingleAgentLoopStream(c *gin.Context) {
 			})
 			mainIterationOffset += segmentMainIterationMax
 			timeoutCancel()
-			baseCtx, cancelWithCause = context.WithCancelCause(context.Background())
+			baseCtx, cancelWithCause = context.WithCancelCause(detachedAgentContext(baseCtx))
 			h.tasks.BindTaskCancel(conversationID, cancelWithCause)
 			taskCtx, timeoutCancel = context.WithTimeout(baseCtx, 600*time.Minute)
 			h.tasks.UpdateTaskStatus(conversationID, "running")
@@ -381,7 +381,8 @@ func (h *AgentHandler) EinoSingleAgentLoop(c *gin.Context) {
 
 	prep, err := h.prepareMultiAgentSession(&req, c, "eino_agent")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		status, msg := multiAgentHTTPErrorStatus(err)
+		c.JSON(status, gin.H{"error": msg})
 		return
 	}
 	h.activateHITLForConversation(prep.ConversationID, req.Hitl)

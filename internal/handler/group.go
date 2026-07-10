@@ -44,7 +44,8 @@ func (h *GroupHandler) CreateGroup(c *gin.Context) {
 		return
 	}
 
-	group, err := h.db.CreateGroup(req.Name, req.Icon)
+	session, _ := security.CurrentSession(c)
+	group, err := h.db.CreateGroup(req.Name, req.Icon, session.UserID)
 	if err != nil {
 		h.logger.Error("创建分组失败", zap.Error(err))
 		// 如果是名称重复错误，返回400状态码
@@ -61,7 +62,8 @@ func (h *GroupHandler) CreateGroup(c *gin.Context) {
 
 // ListGroups 列出所有分组
 func (h *GroupHandler) ListGroups(c *gin.Context) {
-	groups, err := h.db.ListGroups()
+	session, _ := security.CurrentSession(c)
+	groups, err := h.db.ListGroupsForAccess(session.UserID, session.Scope)
 	if err != nil {
 		h.logger.Error("获取分组列表失败", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -74,6 +76,10 @@ func (h *GroupHandler) ListGroups(c *gin.Context) {
 // GetGroup 获取分组
 func (h *GroupHandler) GetGroup(c *gin.Context) {
 	id := c.Param("id")
+	if !h.groupAllowed(c, id) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
+		return
+	}
 
 	group, err := h.db.GetGroup(id)
 	if err != nil {
@@ -94,6 +100,10 @@ type UpdateGroupRequest struct {
 // UpdateGroup 更新分组
 func (h *GroupHandler) UpdateGroup(c *gin.Context) {
 	id := c.Param("id")
+	if !h.groupAllowed(c, id) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
+		return
+	}
 
 	var req UpdateGroupRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -130,6 +140,10 @@ func (h *GroupHandler) UpdateGroup(c *gin.Context) {
 // DeleteGroup 删除分组
 func (h *GroupHandler) DeleteGroup(c *gin.Context) {
 	id := c.Param("id")
+	if !h.groupAllowed(c, id) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
+		return
+	}
 
 	if err := h.db.DeleteGroup(id); err != nil {
 		h.logger.Error("删除分组失败", zap.Error(err))
@@ -157,6 +171,10 @@ func (h *GroupHandler) AddConversationToGroup(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
 		return
 	}
+	if !h.groupAllowed(c, req.GroupID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该分组"})
+		return
+	}
 
 	if err := h.db.AddConversationToGroup(req.ConversationID, req.GroupID); err != nil {
 		h.logger.Error("添加对话到分组失败", zap.Error(err))
@@ -171,6 +189,10 @@ func (h *GroupHandler) AddConversationToGroup(c *gin.Context) {
 func (h *GroupHandler) RemoveConversationFromGroup(c *gin.Context) {
 	conversationID := c.Param("conversationId")
 	groupID := c.Param("id")
+	if !h.groupAllowed(c, groupID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该分组"})
+		return
+	}
 	if !h.groupConversationAllowed(c, conversationID) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
 		return
@@ -198,6 +220,10 @@ type GroupConversation struct {
 // GetGroupConversations 获取分组中的所有对话
 func (h *GroupHandler) GetGroupConversations(c *gin.Context) {
 	groupID := c.Param("id")
+	if !h.groupAllowed(c, groupID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该分组"})
+		return
+	}
 	searchQuery := c.Query("search") // 获取搜索参数
 
 	var conversations []*database.Conversation
@@ -256,7 +282,7 @@ func (h *GroupHandler) GetAllMappings(c *gin.Context) {
 	}
 	filtered := mappings[:0]
 	for _, mapping := range mappings {
-		if h.groupConversationAllowed(c, mapping.ConversationID) {
+		if h.groupConversationAllowed(c, mapping.ConversationID) && h.groupAllowed(c, mapping.GroupID) {
 			filtered = append(filtered, mapping)
 		}
 	}
@@ -300,6 +326,10 @@ type UpdateGroupPinnedRequest struct {
 // UpdateGroupPinned 更新分组置顶状态
 func (h *GroupHandler) UpdateGroupPinned(c *gin.Context) {
 	groupID := c.Param("id")
+	if !h.groupAllowed(c, groupID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该分组"})
+		return
+	}
 
 	var req UpdateGroupPinnedRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -325,6 +355,10 @@ type UpdateConversationPinnedInGroupRequest struct {
 func (h *GroupHandler) UpdateConversationPinnedInGroup(c *gin.Context) {
 	groupID := c.Param("id")
 	conversationID := c.Param("conversationId")
+	if !h.groupAllowed(c, groupID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该分组"})
+		return
+	}
 	if !h.groupConversationAllowed(c, conversationID) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
 		return
@@ -351,4 +385,9 @@ func (h *GroupHandler) groupConversationAllowed(c *gin.Context, conversationID s
 		return false
 	}
 	return h.db.UserCanAccessResource(session.UserID, session.Scope, "conversation", conversationID)
+}
+
+func (h *GroupHandler) groupAllowed(c *gin.Context, groupID string) bool {
+	session, ok := security.CurrentSession(c)
+	return ok && h.db.UserCanAccessGroup(session.UserID, session.Scope, groupID)
 }

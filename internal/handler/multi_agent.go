@@ -133,7 +133,7 @@ func (h *AgentHandler) MultiAgentLoopStream(c *gin.Context) {
 			"userMessageId":  prep.UserMessageID,
 		})
 	}
-	if h.runRoleWorkflowStreamIfBound(&req, prep, sendEvent) {
+	if h.runRoleWorkflowStreamIfBound(c, &req, prep, sendEvent) {
 		return
 	}
 
@@ -163,7 +163,7 @@ func (h *AgentHandler) MultiAgentLoopStream(c *gin.Context) {
 	var result *multiagent.RunResult
 	var runErr error
 
-	baseCtx, cancelWithCause = context.WithCancelCause(context.Background())
+	baseCtx, cancelWithCause = context.WithCancelCause(detachedAgentContext(c.Request.Context()))
 	taskCtx, timeoutCancel := context.WithTimeout(baseCtx, 600*time.Minute)
 
 	if _, err := h.tasks.StartTask(conversationID, req.Message, cancelWithCause); err != nil {
@@ -259,7 +259,7 @@ func (h *AgentHandler) MultiAgentLoopStream(c *gin.Context) {
 			if h.tryContinueOnEinoEmptyResponse(taskCtx, mw, conversationID, result, &emptyResponseContinueAttempt, &curHistory, &curFinalMessage, progressCallback) {
 				mainIterationOffset += segmentMainIterationMax
 				timeoutCancel()
-				baseCtx, cancelWithCause, taskCtx, timeoutCancel = h.rebindEinoRunningTask(conversationID, timeoutCancel)
+				baseCtx, cancelWithCause, taskCtx, timeoutCancel = h.rebindEinoRunningTask(taskCtx, conversationID, timeoutCancel)
 				continue
 			}
 			timeoutCancel()
@@ -291,7 +291,7 @@ func (h *AgentHandler) MultiAgentLoopStream(c *gin.Context) {
 			})
 			mainIterationOffset += segmentMainIterationMax
 			timeoutCancel()
-			baseCtx, cancelWithCause = context.WithCancelCause(context.Background())
+			baseCtx, cancelWithCause = context.WithCancelCause(detachedAgentContext(baseCtx))
 			h.tasks.BindTaskCancel(conversationID, cancelWithCause)
 			taskCtx, timeoutCancel = context.WithTimeout(baseCtx, 600*time.Minute)
 			h.tasks.UpdateTaskStatus(conversationID, "running")
@@ -541,6 +541,8 @@ func formatInterruptContinueUserMessage(note string) string {
 func multiAgentHTTPErrorStatus(err error) (int, string) {
 	msg := err.Error()
 	switch {
+	case strings.Contains(msg, "无权访问"):
+		return http.StatusForbidden, msg
 	case strings.Contains(msg, "对话不存在"):
 		return http.StatusNotFound, msg
 	case strings.Contains(msg, "未找到该 WebShell"):

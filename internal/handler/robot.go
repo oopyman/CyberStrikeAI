@@ -7,6 +7,7 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
@@ -16,6 +17,7 @@ import (
 	"io"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -28,24 +30,24 @@ import (
 )
 
 const (
-	robotCmdHelp       = "帮助"
-	robotCmdList       = "列表"
-	robotCmdListAlt    = "对话列表"
-	robotCmdSwitch     = "切换"
-	robotCmdContinue   = "继续"
-	robotCmdNew        = "新对话"
-	robotCmdClear      = "清空"
-	robotCmdCurrent    = "当前"
-	robotCmdStop       = "停止"
-	robotCmdRoles      = "角色"
-	robotCmdRolesList  = "角色列表"
-	robotCmdSwitchRole = "切换角色"
-	robotCmdDelete       = "删除"
-	robotCmdVersion      = "版本"
-	robotCmdProjects     = "项目"
-	robotCmdProjectsList = "项目列表"
-	robotCmdBindProject  = "绑定项目"
-	robotCmdNewProject   = "新建项目"
+	robotCmdHelp          = "帮助"
+	robotCmdList          = "列表"
+	robotCmdListAlt       = "对话列表"
+	robotCmdSwitch        = "切换"
+	robotCmdContinue      = "继续"
+	robotCmdNew           = "新对话"
+	robotCmdClear         = "清空"
+	robotCmdCurrent       = "当前"
+	robotCmdStop          = "停止"
+	robotCmdRoles         = "角色"
+	robotCmdRolesList     = "角色列表"
+	robotCmdSwitchRole    = "切换角色"
+	robotCmdDelete        = "删除"
+	robotCmdVersion       = "版本"
+	robotCmdProjects      = "项目"
+	robotCmdProjectsList  = "项目列表"
+	robotCmdBindProject   = "绑定项目"
+	robotCmdNewProject    = "新建项目"
 	robotCmdUnbindProject = "解除项目"
 )
 
@@ -60,6 +62,7 @@ type RobotHandler struct {
 	sessionRoles   map[string]string             // key: "platform_userID", value: roleName（默认"默认"）
 	cancelMu       sync.Mutex                    // 保护 runningCancels
 	runningCancels map[string]context.CancelFunc // key: "platform_userID", 用于停止命令中断任务
+	wecomReplay    map[string]time.Time
 }
 
 // NewRobotHandler 创建机器人处理器
@@ -72,12 +75,49 @@ func NewRobotHandler(cfg *config.Config, db *database.DB, agentHandler *AgentHan
 		sessions:       make(map[string]string),
 		sessionRoles:   make(map[string]string),
 		runningCancels: make(map[string]context.CancelFunc),
+		wecomReplay:    make(map[string]time.Time),
 	}
+}
+
+func (h *RobotHandler) acceptFreshWecomRequest(timestamp, nonce, signature string) bool {
+	unixSeconds, err := strconv.ParseInt(strings.TrimSpace(timestamp), 10, 64)
+	if err != nil {
+		return false
+	}
+	now := time.Now()
+	requestTime := time.Unix(unixSeconds, 0)
+	if requestTime.Before(now.Add(-5*time.Minute)) || requestTime.After(now.Add(5*time.Minute)) {
+		return false
+	}
+	key := strings.TrimSpace(timestamp) + "\x00" + strings.TrimSpace(nonce) + "\x00" + strings.TrimSpace(signature)
+	if strings.TrimSpace(nonce) == "" || strings.TrimSpace(signature) == "" {
+		return false
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for replayKey, seenAt := range h.wecomReplay {
+		if now.Sub(seenAt) > 10*time.Minute {
+			delete(h.wecomReplay, replayKey)
+		}
+	}
+	if _, exists := h.wecomReplay[key]; exists {
+		return false
+	}
+	h.wecomReplay[key] = now
+	return true
 }
 
 // sessionKey 生成会话 key
 func (h *RobotHandler) sessionKey(platform, userID string) string {
 	return platform + "_" + userID
+}
+
+// robotOwnerID creates a stable, non-reversible local owner identity for one
+// platform user. Robot users are isolated from each other and from Web users
+// even though they authenticate through a shared platform callback secret.
+func robotOwnerID(platform, userID string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(platform) + "\x00" + strings.TrimSpace(userID)))
+	return fmt.Sprintf("robot:%x", sum[:16])
 }
 
 func (h *RobotHandler) loadSessionBinding(sk string) (convID, role string) {
@@ -119,18 +159,23 @@ func (h *RobotHandler) getOrCreateConversation(platform, userID, title string) (
 	h.mu.RLock()
 	convID = h.sessions[sk]
 	h.mu.RUnlock()
-	if convID != "" {
+	ownerID := robotOwnerID(platform, userID)
+	if convID != "" && h.db.UserCanAccessResource(ownerID, database.RBACScopeOwn, "conversation", convID) {
 		return convID, false
 	}
 	if persistedConvID, persistedRole := h.loadSessionBinding(sk); strings.TrimSpace(persistedConvID) != "" {
-		// 会话绑定持久化：服务重启后也可恢复当前对话和角色。
-		h.mu.Lock()
-		h.sessions[sk] = persistedConvID
-		if strings.TrimSpace(persistedRole) != "" {
-			h.sessionRoles[sk] = persistedRole
+		if !h.db.UserCanAccessResource(ownerID, database.RBACScopeOwn, "conversation", persistedConvID) {
+			h.deleteSessionBinding(sk)
+		} else {
+			// 会话绑定持久化：服务重启后也可恢复当前对话和角色。
+			h.mu.Lock()
+			h.sessions[sk] = persistedConvID
+			if strings.TrimSpace(persistedRole) != "" {
+				h.sessionRoles[sk] = persistedRole
+			}
+			h.mu.Unlock()
+			return persistedConvID, false
 		}
-		h.mu.Unlock()
-		return persistedConvID, false
 	}
 	t := strings.TrimSpace(title)
 	if t == "" {
@@ -140,12 +185,16 @@ func (h *RobotHandler) getOrCreateConversation(platform, userID, title string) (
 	}
 	meta := database.ConversationCreateMeta{Source: "robot:" + platform}
 	meta.ProjectID = effectiveProjectID(h.config, "")
+	if meta.ProjectID != "" && !h.db.UserCanAccessResource(ownerID, database.RBACScopeOwn, "project", meta.ProjectID) {
+		meta.ProjectID = ""
+	}
 	conv, err := h.db.CreateConversation(t, meta)
 	if err != nil {
 		h.logger.Warn("创建机器人会话失败", zap.Error(err))
 		return "", false
 	}
 	convID = conv.ID
+	_ = h.db.SetResourceOwner("conversation", convID, ownerID)
 	h.mu.Lock()
 	role := h.sessionRoles[sk]
 	h.sessions[sk] = convID
@@ -197,11 +246,16 @@ func (h *RobotHandler) clearConversation(platform, userID string) (newConvID str
 	title := "新对话 " + time.Now().Format("01-02 15:04")
 	meta := database.ConversationCreateMeta{Source: "robot:" + platform + ":new"}
 	meta.ProjectID = effectiveProjectID(h.config, "")
+	ownerID := robotOwnerID(platform, userID)
+	if meta.ProjectID != "" && !h.db.UserCanAccessResource(ownerID, database.RBACScopeOwn, "project", meta.ProjectID) {
+		meta.ProjectID = ""
+	}
 	conv, err := h.db.CreateConversation(title, meta)
 	if err != nil {
 		h.logger.Warn("创建新对话失败", zap.Error(err))
 		return ""
 	}
+	_ = h.db.SetResourceOwner("conversation", conv.ID, ownerID)
 	h.setConversation(platform, userID, conv.ID)
 	return conv.ID
 }
@@ -251,7 +305,7 @@ func (h *RobotHandler) HandleMessage(platform, userID, text string) (reply strin
 		h.cancelMu.Unlock()
 	}()
 	role := h.getRole(platform, userID)
-	resp, newConvID, err := h.agentHandler.ProcessMessageForRobot(ctx, platform, convID, text, role)
+	resp, newConvID, err := h.agentHandler.ProcessMessageForRobot(ctx, platform, robotOwnerID(platform, userID), convID, text, role)
 	if err != nil {
 		h.logger.Warn("机器人 Agent 执行失败", zap.String("platform", platform), zap.String("userID", userID), zap.Error(err))
 		if errors.Is(err, context.Canceled) {
@@ -306,15 +360,19 @@ func (h *RobotHandler) projectsEnabled() bool {
 	return h.config != nil && h.config.Project.Enabled
 }
 
-func (h *RobotHandler) resolveProjectByIDOrName(idOrName string) (*database.Project, string) {
+func (h *RobotHandler) resolveProjectByIDOrName(platform, userID, idOrName string) (*database.Project, string) {
 	idOrName = strings.TrimSpace(idOrName)
 	if idOrName == "" {
 		return nil, "请指定项目 ID 或名称，例如：绑定项目 xxx-xxx"
 	}
+	ownerID := robotOwnerID(platform, userID)
 	if p, err := h.db.GetProject(idOrName); err == nil {
-		return p, ""
+		if h.db.UserCanAccessResource(ownerID, database.RBACScopeOwn, "project", p.ID) {
+			return p, ""
+		}
+		return nil, "项目不存在或无权访问。"
 	}
-	list, err := h.db.ListProjects("", "", 200, 0)
+	list, err := h.db.ListProjectsForAccess("", "", 200, 0, ownerID, database.RBACScopeOwn)
 	if err != nil {
 		return nil, "查询项目失败: " + err.Error()
 	}
@@ -349,11 +407,11 @@ func (h *RobotHandler) formatProjectLabel(projectID string) string {
 	return projectID
 }
 
-func (h *RobotHandler) cmdProjects() string {
+func (h *RobotHandler) cmdProjects(platform, userID string) string {
 	if !h.projectsEnabled() {
 		return "项目功能未启用（config.project.enabled）。"
 	}
-	list, err := h.db.ListProjects("", "", 50, 0)
+	list, err := h.db.ListProjectsForAccess("", "", 50, 0, robotOwnerID(platform, userID), database.RBACScopeOwn)
 	if err != nil {
 		return "获取项目列表失败: " + err.Error()
 	}
@@ -380,7 +438,7 @@ func (h *RobotHandler) cmdBindProject(platform, userID, idOrName string) string 
 	if !h.projectsEnabled() {
 		return "项目功能未启用（config.project.enabled）。"
 	}
-	p, errMsg := h.resolveProjectByIDOrName(idOrName)
+	p, errMsg := h.resolveProjectByIDOrName(platform, userID, idOrName)
 	if p == nil {
 		return errMsg
 	}
@@ -407,6 +465,7 @@ func (h *RobotHandler) cmdNewProject(platform, userID, name string) string {
 	if err != nil {
 		return "创建项目失败: " + err.Error()
 	}
+	_ = h.db.SetResourceOwner("project", created.ID, robotOwnerID(platform, userID))
 	convID, _ := h.getOrCreateConversation(platform, userID, name)
 	if convID == "" {
 		return fmt.Sprintf("项目已创建：「%s」\nID: %s\n（绑定当前对话失败，请手动发送「绑定项目 %s」）", created.Name, created.ID, created.ID)
@@ -430,6 +489,9 @@ func (h *RobotHandler) cmdUnbindProject(platform, userID string) string {
 			convID = persistedConvID
 		}
 	}
+	if !h.db.UserCanAccessResource(robotOwnerID(platform, userID), database.RBACScopeOwn, "conversation", convID) {
+		return "当前对话不存在或无权访问。"
+	}
 	if convID == "" {
 		return "当前没有进行中的对话，无需解除绑定。"
 	}
@@ -446,8 +508,8 @@ func (h *RobotHandler) cmdUnbindProject(platform, userID string) string {
 	return "已解除当前对话的项目绑定。"
 }
 
-func (h *RobotHandler) cmdList() string {
-	convs, err := h.db.ListConversations(50, 0, "", "", "")
+func (h *RobotHandler) cmdList(platform, userID string) string {
+	convs, err := h.db.ListConversationsForAccess(50, 0, "", "", "", robotOwnerID(platform, userID), database.RBACScopeOwn)
 	if err != nil {
 		return "获取对话列表失败: " + err.Error()
 	}
@@ -471,7 +533,7 @@ func (h *RobotHandler) cmdSwitch(platform, userID, convID string) string {
 		return "请指定对话 ID，例如：切换 xxx-xxx-xxx"
 	}
 	conv, err := h.db.GetConversation(convID)
-	if err != nil {
+	if err != nil || !h.db.UserCanAccessResource(robotOwnerID(platform, userID), database.RBACScopeOwn, "conversation", convID) {
 		return "对话不存在或 ID 错误。"
 	}
 	h.setConversation(platform, userID, conv.ID)
@@ -511,6 +573,9 @@ func (h *RobotHandler) cmdCurrent(platform, userID string) string {
 	h.mu.RUnlock()
 	if convID == "" {
 		return "当前没有进行中的对话。发送任意内容将创建新对话。"
+	}
+	if !h.db.UserCanAccessResource(robotOwnerID(platform, userID), database.RBACScopeOwn, "conversation", convID) {
+		return "当前对话不存在或无权访问。"
 	}
 	conv, err := h.db.GetConversation(convID)
 	if err != nil {
@@ -582,6 +647,9 @@ func (h *RobotHandler) cmdDelete(platform, userID, convID string) string {
 	if convID == "" {
 		return "请指定对话 ID，例如：删除 xxx-xxx-xxx"
 	}
+	if !h.db.UserCanAccessResource(robotOwnerID(platform, userID), database.RBACScopeOwn, "conversation", convID) {
+		return "对话不存在或无权访问。"
+	}
 	sk := h.sessionKey(platform, userID)
 	h.mu.RLock()
 	currentConvID := h.sessions[sk]
@@ -617,7 +685,7 @@ func (h *RobotHandler) handleRobotCommand(platform, userID, text string) (string
 	case text == robotCmdHelp || text == "help" || text == "？" || text == "?":
 		return h.cmdHelp(), true
 	case text == robotCmdList || text == robotCmdListAlt || text == "list":
-		return h.cmdList(), true
+		return h.cmdList(platform, userID), true
 	case strings.HasPrefix(text, robotCmdSwitch+" ") || strings.HasPrefix(text, robotCmdContinue+" ") || strings.HasPrefix(text, "switch ") || strings.HasPrefix(text, "continue "):
 		var id string
 		switch {
@@ -663,7 +731,7 @@ func (h *RobotHandler) handleRobotCommand(platform, userID, text string) (string
 	case text == robotCmdVersion || text == "version":
 		return h.cmdVersion(), true
 	case text == robotCmdProjects || text == robotCmdProjectsList || text == "projects":
-		return h.cmdProjects(), true
+		return h.cmdProjects(platform, userID), true
 	case text == robotCmdUnbindProject || text == "unbind project":
 		return h.cmdUnbindProject(platform, userID), true
 	case strings.HasPrefix(text, robotCmdNewProject+" ") || strings.HasPrefix(text, "new project "):
@@ -900,6 +968,11 @@ func (h *RobotHandler) HandleWecomPOST(c *gin.Context) {
 	expected := h.signWecomRequest(token, timestamp, nonce, tmp.Encrypt)
 	if expected != msgSignature {
 		h.logger.Warn("企业微信 POST 签名验证失败", zap.String("expected", expected), zap.String("got", msgSignature))
+		c.String(http.StatusOK, "")
+		return
+	}
+	if !h.acceptFreshWecomRequest(timestamp, nonce, msgSignature) {
+		h.logger.Warn("企业微信 POST 时间戳过期或请求重放，已拒绝")
 		c.String(http.StatusOK, "")
 		return
 	}

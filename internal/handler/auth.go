@@ -64,6 +64,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 				Action:   "login",
 				Result:   "failure",
 				Message:  "登录失败：密码错误",
+				Actor:    strings.TrimSpace(req.Username),
 			})
 		}
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "密码错误"})
@@ -78,6 +79,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			Result:      "success",
 			SessionHint: audit.HintFromToken(token),
 			Message:     "登录成功",
+			Actor:       session.Username,
 			Detail: map[string]interface{}{
 				"expires_at": expiresAt.UTC().Format(time.RFC3339),
 			},
@@ -93,9 +95,10 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			"username":     session.Username,
 			"display_name": session.DisplayName,
 		},
-		"roles":       session.Roles,
-		"permissions": permissionKeys(session.Permissions),
-		"scope":       session.Scope,
+		"roles":             session.Roles,
+		"permissions":       permissionKeys(session.Permissions),
+		"permission_scopes": session.PermissionScopes,
+		"scope":             session.Scope,
 	})
 }
 
@@ -234,9 +237,10 @@ func (h *AuthHandler) Validate(c *gin.Context) {
 			"username":     session.Username,
 			"display_name": session.DisplayName,
 		},
-		"roles":       session.Roles,
-		"permissions": permissionKeys(session.Permissions),
-		"scope":       session.Scope,
+		"roles":             session.Roles,
+		"permissions":       permissionKeys(session.Permissions),
+		"permission_scopes": session.PermissionScopes,
+		"scope":             session.Scope,
 	})
 }
 

@@ -8,6 +8,7 @@ import (
 	"cyberstrike-ai/internal/audit"
 	"cyberstrike-ai/internal/database"
 	"cyberstrike-ai/internal/mcp/builtin"
+	"cyberstrike-ai/internal/security"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -30,16 +31,34 @@ func (h *AgentHandler) prepareMultiAgentSession(req *ChatRequest, c *gin.Context
 	}
 
 	conversationID := strings.TrimSpace(req.ConversationID)
+	projectID := strings.TrimSpace(effectiveProjectID(h.config, req.ProjectID))
+	webshellID := strings.TrimSpace(req.WebShellConnectionID)
+	session, hasSession := security.CurrentSession(c)
+	if !hasSession || !session.Permissions["chat:write"] {
+		return nil, fmt.Errorf("无权写入对话")
+	}
+	canAccess := func(resourceType, resourceID string) bool {
+		if !hasSession || h.db == nil || strings.TrimSpace(resourceID) == "" {
+			return false
+		}
+		return h.db.UserCanAccessResource(session.UserID, session.Scope, resourceType, resourceID)
+	}
+	if projectID != "" && (!session.Permissions["project:read"] || !canAccess("project", projectID)) {
+		return nil, fmt.Errorf("无权访问目标项目")
+	}
+	if webshellID != "" && (!session.Permissions["webshell:write"] || !canAccess("webshell", webshellID)) {
+		return nil, fmt.Errorf("无权访问该 WebShell 连接")
+	}
 	createdNew := false
 	if conversationID == "" {
 		title := safeTruncateString(req.Message, 50)
 		var conv *database.Conversation
 		var err error
 		meta := audit.ConversationCreateMetaFromGin(c, source)
-		meta.ProjectID = effectiveProjectID(h.config, req.ProjectID)
-		if strings.TrimSpace(req.WebShellConnectionID) != "" {
+		meta.ProjectID = projectID
+		if webshellID != "" {
 			meta.Source = source + "_webshell"
-			meta.WebShellConnectionID = strings.TrimSpace(req.WebShellConnectionID)
+			meta.WebShellConnectionID = webshellID
 			conv, err = h.db.CreateConversationWithWebshell(meta.WebShellConnectionID, title, meta)
 		} else {
 			conv, err = h.db.CreateConversation(title, meta)
@@ -49,9 +68,16 @@ func (h *AgentHandler) prepareMultiAgentSession(req *ChatRequest, c *gin.Context
 		}
 		conversationID = conv.ID
 		createdNew = true
+		if hasSession {
+			_ = h.db.SetResourceOwner("conversation", conversationID, session.UserID)
+			_ = h.db.AssignResourceToUser(session.UserID, "conversation", conversationID)
+		}
 	} else {
 		if _, err := h.db.GetConversation(conversationID); err != nil {
 			return nil, fmt.Errorf("对话不存在")
+		}
+		if !canAccess("conversation", conversationID) {
+			return nil, fmt.Errorf("无权访问该对话")
 		}
 	}
 
@@ -67,8 +93,8 @@ func (h *AgentHandler) prepareMultiAgentSession(req *ChatRequest, c *gin.Context
 
 	finalMessage := req.Message
 	var roleTools []string
-	if req.WebShellConnectionID != "" {
-		conn, errConn := h.db.GetWebshellConnection(strings.TrimSpace(req.WebShellConnectionID))
+	if webshellID != "" {
+		conn, errConn := h.db.GetWebshellConnection(webshellID)
 		if errConn != nil || conn == nil {
 			h.logger.Warn("WebShell AI 助手：未找到连接", zap.String("id", req.WebShellConnectionID), zap.Error(errConn))
 			return nil, fmt.Errorf("未找到该 WebShell 连接")

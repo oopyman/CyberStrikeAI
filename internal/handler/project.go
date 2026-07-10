@@ -642,6 +642,12 @@ func (h *ProjectHandler) DeleteFactEdge(c *gin.Context) {
 func (h *ProjectHandler) PromoteAttackChain(c *gin.Context) {
 	projectID := c.Param("id")
 	conversationID := c.Param("conversationId")
+	session, ok := security.CurrentSession(c)
+	if !ok || !h.db.UserCanAccessResource(session.UserID, session.Scope, "project", projectID) ||
+		!h.db.UserCanAccessResource(session.UserID, session.Scope, "conversation", conversationID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问目标项目或来源对话"})
+		return
+	}
 	result, err := attackchain.PromoteToProject(h.db, projectID, conversationID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

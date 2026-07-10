@@ -8,6 +8,8 @@ import (
 
 	"cyberstrike-ai/internal/agent"
 	"cyberstrike-ai/internal/config"
+	"cyberstrike-ai/internal/database"
+	"cyberstrike-ai/internal/security"
 	workflowrunner "cyberstrike-ai/internal/workflow"
 
 	"github.com/gin-gonic/gin"
@@ -20,6 +22,10 @@ func (h *WorkflowHandler) SetRuntime(agent *agent.Agent, cfg *config.Config) {
 
 func (h *WorkflowHandler) GetRun(c *gin.Context) {
 	runID := strings.TrimSpace(c.Param("runId"))
+	if !h.workflowRunAllowed(c, runID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
+		return
+	}
 	run, err := h.db.GetWorkflowRun(runID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -39,6 +45,10 @@ func (h *WorkflowHandler) GetRun(c *gin.Context) {
 
 func (h *WorkflowHandler) ReplayRun(c *gin.Context) {
 	runID := strings.TrimSpace(c.Param("runId"))
+	if !h.workflowRunAllowed(c, runID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
+		return
+	}
 	nodeRuns, err := h.db.ListWorkflowNodeRuns(runID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -67,11 +77,18 @@ func (h *WorkflowHandler) ReplayRun(c *gin.Context) {
 
 func (h *WorkflowHandler) ListPendingRuns(c *gin.Context) {
 	conversationID := strings.TrimSpace(c.Query("conversationId"))
+	if conversationID != "" && !h.workflowConversationAllowed(c, conversationID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
+		return
+	}
 	runs, err := h.db.ListWorkflowRunsAwaitingHITLFiltered(conversationID, 50)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	runs = filterSlice(runs, func(run *database.WorkflowRun) bool {
+		return run != nil && h.workflowConversationAllowed(c, run.ConversationID)
+	})
 	c.JSON(http.StatusOK, gin.H{"runs": runs})
 }
 
@@ -86,6 +103,10 @@ func (h *WorkflowHandler) ResumeRun(c *gin.Context) {
 		return
 	}
 	runID := strings.TrimSpace(c.Param("runId"))
+	if !h.workflowRunAllowed(c, runID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
+		return
+	}
 	var req workflowResumeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求参数: " + err.Error()})
@@ -159,4 +180,21 @@ func (h *WorkflowHandler) ResumeRun(c *gin.Context) {
 		"status":        result.Status,
 		"awaitingHitl":  result.AwaitingHITL,
 	})
+}
+
+func (h *WorkflowHandler) workflowConversationAllowed(c *gin.Context, conversationID string) bool {
+	session, ok := security.CurrentSession(c)
+	return ok && h.db.UserCanAccessResource(session.UserID, session.Scope, "conversation", strings.TrimSpace(conversationID))
+}
+
+func (h *WorkflowHandler) workflowRunAllowed(c *gin.Context, runID string) bool {
+	session, ok := security.CurrentSession(c)
+	if !ok {
+		return false
+	}
+	if session.Scope == database.RBACScopeAll {
+		return true
+	}
+	run, err := h.db.GetWorkflowRun(strings.TrimSpace(runID))
+	return err == nil && run != nil && h.workflowConversationAllowed(c, run.ConversationID)
 }

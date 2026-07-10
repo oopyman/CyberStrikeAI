@@ -721,10 +721,15 @@ func (h *WebShellHandler) Exec(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "url and command are required"})
 		return
 	}
-	if !h.webshellConnectionRequestAllowed(c, req.ConnectionID, req.URL) {
+	conn, allowed := h.authorizedWebshellConnection(c, req.ConnectionID, req.URL)
+	if !allowed {
 		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
 		return
 	}
+	// The database record is authoritative. Never let a caller pair an
+	// authorized ID with attacker-controlled transport credentials or a URL.
+	req.URL, req.Password, req.Type = conn.URL, conn.Password, conn.Type
+	req.Method, req.CmdParam, req.Encoding = conn.Method, conn.CmdParam, conn.Encoding
 
 	parsed, err := url.Parse(req.URL)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
@@ -818,10 +823,13 @@ func (h *WebShellHandler) FileOp(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "url and action are required"})
 		return
 	}
-	if !h.webshellConnectionRequestAllowed(c, req.ConnectionID, req.URL) {
+	conn, allowed := h.authorizedWebshellConnection(c, req.ConnectionID, req.URL)
+	if !allowed {
 		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
 		return
 	}
+	req.URL, req.Password, req.Type = conn.URL, conn.Password, conn.Type
+	req.Method, req.CmdParam, req.Encoding, req.OS = conn.Method, conn.CmdParam, conn.Encoding, conn.OS
 
 	parsed, err := url.Parse(req.URL)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
@@ -898,23 +906,26 @@ func (h *WebShellHandler) FileOp(c *gin.Context) {
 	})
 }
 
-func (h *WebShellHandler) webshellConnectionRequestAllowed(c *gin.Context, connectionID, requestURL string) bool {
+func (h *WebShellHandler) authorizedWebshellConnection(c *gin.Context, connectionID, requestURL string) (*database.WebShellConnection, bool) {
 	connectionID = strings.TrimSpace(connectionID)
 	if connectionID == "" {
-		return true
+		return nil, false
 	}
 	if h.db == nil {
-		return false
+		return nil, false
 	}
 	session, ok := security.CurrentSession(c)
 	if !ok || !h.db.UserCanAccessResource(session.UserID, session.Scope, "webshell", connectionID) {
-		return false
+		return nil, false
 	}
 	conn, err := h.db.GetWebshellConnection(connectionID)
 	if err != nil || conn == nil {
-		return false
+		return nil, false
 	}
-	return strings.TrimSpace(conn.URL) == strings.TrimSpace(requestURL)
+	if requestURL = strings.TrimSpace(requestURL); requestURL != "" && strings.TrimSpace(conn.URL) != requestURL {
+		return nil, false
+	}
+	return conn, true
 }
 
 // ExecWithConnection 在指定 WebShell 连接上执行命令（供 MCP/Agent 等非 HTTP 调用）

@@ -536,6 +536,14 @@ func (h *C2Handler) CreateTask(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
 		return
 	}
+	if conversationID := strings.TrimSpace(req.ConversationID); conversationID != "" {
+		session, ok := security.CurrentSession(c)
+		if !ok || !h.mgr().DB().UserCanAccessResource(session.UserID, session.Scope, "conversation", conversationID) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权关联目标对话"})
+			return
+		}
+		req.ConversationID = conversationID
+	}
 
 	input := c2.EnqueueTaskInput{
 		SessionID:      req.SessionID,
@@ -722,6 +730,9 @@ func (h *C2Handler) PayloadBuild(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	if session, ok := security.CurrentSession(c); ok {
+		_ = h.mgr().DB().RecordC2PayloadArtifact(filepath.Base(result.OutputPath), result.PayloadID, result.ListenerID, session.UserID)
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"payload": result,
@@ -738,6 +749,11 @@ func (h *C2Handler) PayloadDownload(c *gin.Context) {
 	}
 	if strings.Contains(filename, "/") || strings.Contains(filename, "\\") || strings.Contains(filename, "..") {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload id"})
+		return
+	}
+	session, ok := security.CurrentSession(c)
+	if !ok || !h.mgr().DB().UserCanAccessC2Payload(session.UserID, session.Scope, filename) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
 		return
 	}
 

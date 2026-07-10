@@ -18,6 +18,7 @@ import (
 
 	"cyberstrike-ai/internal/agent"
 	"cyberstrike-ai/internal/audit"
+	"cyberstrike-ai/internal/authctx"
 	"cyberstrike-ai/internal/config"
 	"cyberstrike-ai/internal/database"
 	"cyberstrike-ai/internal/mcp/builtin"
@@ -728,7 +729,22 @@ func (h *AgentHandler) runRobotMultiAgentWithRetry(
 }
 
 // ProcessMessageForRobot 供机器人（企业微信/钉钉/飞书）调用：Eino 单/多代理执行路径（含 progressCallback、过程详情），仅不发送 SSE，最后返回完整回复
-func (h *AgentHandler) ProcessMessageForRobot(ctx context.Context, platform, conversationID, message, role string) (response string, convID string, err error) {
+func (h *AgentHandler) ProcessMessageForRobot(ctx context.Context, platform, ownerUserID, conversationID, message, role string) (response string, convID string, err error) {
+	permissions := map[string]bool{
+		"agent:execute": true,
+		"chat:read":     true, "chat:write": true, "chat:delete": true,
+		"project:read": true, "project:write": true,
+		"knowledge:read":     true,
+		"vulnerability:read": true, "vulnerability:write": true,
+		"attackchain:read": true, "attackchain:write": true,
+		"workflow:read": true,
+		"hitl:read":     true, "hitl:write": true,
+	}
+	ownerUserID = strings.TrimSpace(ownerUserID)
+	if ownerUserID == "" {
+		return "", "", fmt.Errorf("robot owner identity is required")
+	}
+	ctx = authctx.WithPrincipal(ctx, authctx.NewPrincipal(ownerUserID, "robot-service", database.RBACScopeOwn, permissions))
 	if conversationID == "" {
 		title := safeTruncateString(message, 50)
 		src := "robot"
@@ -737,13 +753,17 @@ func (h *AgentHandler) ProcessMessageForRobot(ctx context.Context, platform, con
 		}
 		meta := audit.ConversationCreateMeta(src)
 		meta.ProjectID = effectiveProjectID(h.config, "")
+		if meta.ProjectID != "" && !h.db.UserCanAccessResource(ownerUserID, database.RBACScopeOwn, "project", meta.ProjectID) {
+			meta.ProjectID = ""
+		}
 		conv, createErr := h.db.CreateConversation(title, meta)
 		if createErr != nil {
 			return "", "", fmt.Errorf("创建对话失败: %w", createErr)
 		}
 		conversationID = conv.ID
+		_ = h.db.SetResourceOwner("conversation", conversationID, ownerUserID)
 	} else {
-		if _, getErr := h.db.GetConversation(conversationID); getErr != nil {
+		if _, getErr := h.db.GetConversation(conversationID); getErr != nil || !h.db.UserCanAccessResource(ownerUserID, database.RBACScopeOwn, "conversation", conversationID) {
 			return "", "", fmt.Errorf("对话不存在")
 		}
 	}
@@ -1489,6 +1509,10 @@ func (h *AgentHandler) CancelAgentLoop(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if !h.agentConversationAllowed(c, req.ConversationID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
+		return
+	}
 
 	if req.ContinueAfter {
 		if h.tasks.GetTask(req.ConversationID) == nil {
@@ -1570,6 +1594,10 @@ func (h *AgentHandler) SubscribeAgentTaskEvents(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "conversationId is required"})
 		return
 	}
+	if !h.agentConversationAllowed(c, conversationID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
+		return
+	}
 	if h.tasks.GetTask(conversationID) == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "no active task for this conversation"})
 		return
@@ -1648,6 +1676,9 @@ func (h *AgentHandler) enrichCompletedTasksWithConversationTitles(tasks []*Compl
 // ListAgentTasks 列出所有运行中的任务
 func (h *AgentHandler) ListAgentTasks(c *gin.Context) {
 	tasks := h.tasks.GetActiveTasks()
+	tasks = filterSlice(tasks, func(task *AgentTask) bool {
+		return task != nil && h.agentConversationAllowed(c, task.ConversationID)
+	})
 	h.enrichAgentTasksWithConversationTitles(tasks)
 	c.JSON(http.StatusOK, gin.H{
 		"tasks": tasks,
@@ -1657,10 +1688,28 @@ func (h *AgentHandler) ListAgentTasks(c *gin.Context) {
 // ListCompletedTasks 列出最近完成的任务历史
 func (h *AgentHandler) ListCompletedTasks(c *gin.Context) {
 	tasks := h.tasks.GetCompletedTasks()
+	tasks = filterSlice(tasks, func(task *CompletedTask) bool {
+		return task != nil && h.agentConversationAllowed(c, task.ConversationID)
+	})
 	h.enrichCompletedTasksWithConversationTitles(tasks)
 	c.JSON(http.StatusOK, gin.H{
 		"tasks": tasks,
 	})
+}
+
+func (h *AgentHandler) agentConversationAllowed(c *gin.Context, conversationID string) bool {
+	session, ok := security.CurrentSession(c)
+	return ok && h.db != nil && h.db.UserCanAccessResource(session.UserID, session.Scope, "conversation", strings.TrimSpace(conversationID))
+}
+
+func filterSlice[T any](items []T, keep func(T) bool) []T {
+	out := make([]T, 0, len(items))
+	for _, item := range items {
+		if keep(item) {
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 // BatchTaskRequest 批量任务请求
