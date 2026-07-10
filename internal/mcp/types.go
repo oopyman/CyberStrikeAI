@@ -201,6 +201,7 @@ type ToolExecution struct {
 	Duration  time.Duration          `json:"duration,omitempty"`
 	// ConversationID 仅 API 展示用（进行中的 Agent 任务），不写入 tool_executions 表。
 	ConversationID string `json:"conversationId,omitempty"`
+	OwnerUserID    string `json:"-"`
 }
 
 // ToolStats 工具统计信息

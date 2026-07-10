@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"cyberstrike-ai/internal/authctx"
+
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
@@ -49,6 +51,18 @@ type Server struct {
 	// nil 表示未配置，沿用默认 30 分钟；指向 0 表示不限制；>0 为分钟数。
 	httpToolTimeoutMinutes *int
 	httpToolTimeoutMu      sync.RWMutex
+	toolAuthorizer         func(context.Context, string, map[string]interface{}) error
+}
+
+// SetToolAuthorizer installs the common policy decision point for every
+// user-attributed tool call, whether it originates from HTTP or an Agent.
+func (s *Server) SetToolAuthorizer(authorizer func(context.Context, string, map[string]interface{}) error) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.toolAuthorizer = authorizer
+	s.mu.Unlock()
 }
 
 type sseClient struct {
@@ -111,21 +125,24 @@ func (s *Server) ConfigureHTTPToolCallTimeoutFromAgentMinutes(minutes int) {
 	s.httpToolTimeoutMinutes = &v
 }
 
-func (s *Server) effectiveHTTPToolCallDeadline() (context.Context, context.CancelFunc) {
+func (s *Server) effectiveHTTPToolCallDeadline(parent context.Context) (context.Context, context.CancelFunc) {
 	const defaultDur = 30 * time.Minute
+	if parent == nil {
+		parent = context.Background()
+	}
 	if s == nil {
-		return context.WithTimeout(context.Background(), defaultDur)
+		return context.WithTimeout(parent, defaultDur)
 	}
 	s.httpToolTimeoutMu.RLock()
 	mPtr := s.httpToolTimeoutMinutes
 	s.httpToolTimeoutMu.RUnlock()
 	if mPtr == nil {
-		return context.WithTimeout(context.Background(), defaultDur)
+		return context.WithTimeout(parent, defaultDur)
 	}
 	if *mPtr <= 0 {
-		return context.WithCancel(context.Background())
+		return context.WithCancel(parent)
 	}
-	return context.WithTimeout(context.Background(), time.Duration(*mPtr)*time.Minute)
+	return context.WithTimeout(parent, time.Duration(*mPtr)*time.Minute)
 }
 
 // RegisterTool 注册工具
@@ -196,7 +213,7 @@ func (s *Server) HandleHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := s.handleMessage(&msg)
+	response := s.handleMessage(r.Context(), &msg)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
@@ -223,7 +240,7 @@ func (s *Server) serveSSESessionMessage(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	response := s.handleMessage(&msg)
+	response := s.handleMessage(r.Context(), &msg)
 	if response == nil {
 		w.WriteHeader(http.StatusAccepted)
 		return
@@ -317,7 +334,7 @@ func (s *Server) removeSSEClient(id string) {
 }
 
 // handleMessage 处理MCP消息
-func (s *Server) handleMessage(msg *Message) *Message {
+func (s *Server) handleMessage(ctx context.Context, msg *Message) *Message {
 	// 检查是否是通知（notification）- 通知没有id字段，不需要响应
 	isNotification := msg.ID.Value() == nil || msg.ID.String() == ""
 
@@ -332,7 +349,7 @@ func (s *Server) handleMessage(msg *Message) *Message {
 	case "tools/list":
 		return s.handleListTools(msg)
 	case "tools/call":
-		return s.handleCallTool(msg)
+		return s.handleCallTool(ctx, msg)
 	case "prompts/list":
 		return s.handleListPrompts(msg)
 	case "prompts/get":
@@ -433,7 +450,7 @@ func (s *Server) handleListTools(msg *Message) *Message {
 }
 
 // handleCallTool 处理工具调用请求
-func (s *Server) handleCallTool(msg *Message) *Message {
+func (s *Server) handleCallTool(requestCtx context.Context, msg *Message) *Message {
 	var req CallToolRequest
 	if err := json.Unmarshal(msg.Params, &req); err != nil {
 		return &Message{
@@ -442,6 +459,17 @@ func (s *Server) handleCallTool(msg *Message) *Message {
 			Version: "2.0",
 			Error:   &Error{Code: -32602, Message: "Invalid params"},
 		}
+	}
+	_, authenticated := authctx.PrincipalFromContext(requestCtx)
+	s.mu.RLock()
+	authorizer := s.toolAuthorizer
+	s.mu.RUnlock()
+	if authorizer != nil {
+		if err := authorizer(requestCtx, req.Name, req.Arguments); err != nil {
+			return &Message{ID: msg.ID, Type: MessageTypeError, Version: "2.0", Error: &Error{Code: -32003, Message: "Forbidden", Data: err.Error()}}
+		}
+	} else if authenticated {
+		return &Message{ID: msg.ID, Type: MessageTypeError, Version: "2.0", Error: &Error{Code: -32003, Message: "Tool authorization policy is not configured"}}
 	}
 
 	executionID := uuid.New().String()
@@ -452,6 +480,10 @@ func (s *Server) handleCallTool(msg *Message) *Message {
 		Status:    "running",
 		StartTime: time.Now(),
 	}
+	if principal, ok := authctx.PrincipalFromContext(requestCtx); ok {
+		execution.OwnerUserID = principal.UserID
+	}
+	execution.ConversationID = MCPConversationIDFromContext(requestCtx)
 
 	s.mu.Lock()
 	s.executions[executionID] = execution
@@ -495,7 +527,7 @@ func (s *Server) handleCallTool(msg *Message) *Message {
 		}
 	}
 
-	baseCtx, timeoutCancel := s.effectiveHTTPToolCallDeadline()
+	baseCtx, timeoutCancel := s.effectiveHTTPToolCallDeadline(requestCtx)
 	defer timeoutCancel()
 	execCtx, runCancel := context.WithCancel(baseCtx)
 	s.registerRunningCancel(executionID, runCancel)
@@ -809,6 +841,17 @@ func (s *Server) GetAllTools() []Tool {
 
 // CallTool 直接调用工具（用于内部调用）
 func (s *Server) CallTool(ctx context.Context, toolName string, args map[string]interface{}) (*ToolResult, string, error) {
+	_, authenticated := authctx.PrincipalFromContext(ctx)
+	s.mu.RLock()
+	authorizer := s.toolAuthorizer
+	s.mu.RUnlock()
+	if authorizer != nil {
+		if err := authorizer(ctx, toolName, args); err != nil {
+			return nil, "", fmt.Errorf("tool authorization denied: %w", err)
+		}
+	} else if authenticated {
+		return nil, "", errors.New("tool authorization policy is not configured")
+	}
 	s.mu.RLock()
 	handler, exists := s.tools[toolName]
 	s.mu.RUnlock()
@@ -826,6 +869,10 @@ func (s *Server) CallTool(ctx context.Context, toolName string, args map[string]
 		Status:    "running",
 		StartTime: time.Now(),
 	}
+	if principal, ok := authctx.PrincipalFromContext(ctx); ok {
+		execution.OwnerUserID = principal.UserID
+	}
+	execution.ConversationID = MCPConversationIDFromContext(ctx)
 
 	s.mu.Lock()
 	s.executions[executionID] = execution
@@ -922,7 +969,7 @@ func (s *Server) CallTool(ctx context.Context, toolName string, args map[string]
 }
 
 // BeginToolExecution 创建 running 状态的执行记录，供 Eino 等非 CallTool 路径在工具开始时落库。
-func (s *Server) BeginToolExecution(toolName string, args map[string]interface{}) string {
+func (s *Server) BeginToolExecution(ctx context.Context, toolName string, args map[string]interface{}) string {
 	if s == nil {
 		return ""
 	}
@@ -937,6 +984,10 @@ func (s *Server) BeginToolExecution(toolName string, args map[string]interface{}
 		Status:    "running",
 		StartTime: time.Now(),
 	}
+	if principal, ok := authctx.PrincipalFromContext(ctx); ok {
+		execution.OwnerUserID = principal.UserID
+	}
+	execution.ConversationID = MCPConversationIDFromContext(ctx)
 
 	s.mu.Lock()
 	s.executions[executionID] = execution
@@ -952,7 +1003,7 @@ func (s *Server) BeginToolExecution(toolName string, args map[string]interface{}
 }
 
 // FinishToolExecution 完成先前 BeginToolExecution 创建的记录；executionID 为空时等同 RecordCompletedToolInvocation。
-func (s *Server) FinishToolExecution(executionID, toolName string, args map[string]interface{}, resultText string, invokeErr error) string {
+func (s *Server) FinishToolExecution(ctx context.Context, executionID, toolName string, args map[string]interface{}, resultText string, invokeErr error) string {
 	if s == nil {
 		return ""
 	}
@@ -961,7 +1012,7 @@ func (s *Server) FinishToolExecution(executionID, toolName string, args map[stri
 	}
 	id := strings.TrimSpace(executionID)
 	if id == "" {
-		return s.RecordCompletedToolInvocation(toolName, args, resultText, invokeErr)
+		id = uuid.New().String()
 	}
 
 	now := time.Now()
@@ -983,6 +1034,12 @@ func (s *Server) FinishToolExecution(executionID, toolName string, args map[stri
 	}
 	if len(args) > 0 {
 		exec.Arguments = args
+	}
+	if principal, ok := authctx.PrincipalFromContext(ctx); ok {
+		exec.OwnerUserID = principal.UserID
+	}
+	if conversationID := MCPConversationIDFromContext(ctx); conversationID != "" {
+		exec.ConversationID = conversationID
 	}
 	exec.EndTime = &now
 	if exec.StartTime.IsZero() {
@@ -1027,8 +1084,8 @@ func (s *Server) FinishToolExecution(executionID, toolName string, args map[stri
 
 // RecordCompletedToolInvocation 将已在其它路径完成的工具调用写入监控存储（格式与 CallTool 结束后一致），
 // 用于 Eino ADK filesystem execute 等未经过 CallTool 的场景；返回 executionId 供助手消息 mcpExecutionIds 关联。
-func (s *Server) RecordCompletedToolInvocation(toolName string, args map[string]interface{}, resultText string, invokeErr error) string {
-	return s.FinishToolExecution("", toolName, args, resultText, invokeErr)
+func (s *Server) RecordCompletedToolInvocation(ctx context.Context, toolName string, args map[string]interface{}, resultText string, invokeErr error) string {
+	return s.FinishToolExecution(ctx, "", toolName, args, resultText, invokeErr)
 }
 
 // UpdateToolExecutionResult 将监控库中的工具结果更新为送入模型的展示正文（如 reduction 后的 persisted-output）。
@@ -1519,7 +1576,7 @@ func (s *Server) HandleStdio() error {
 		}
 
 		// 处理消息
-		response := s.handleMessage(&msg)
+		response := s.handleMessage(context.Background(), &msg)
 
 		// 如果是通知（response 为 nil），不需要发送响应
 		if response == nil {

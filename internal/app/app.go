@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +17,7 @@ import (
 
 	"cyberstrike-ai/internal/agent"
 	"cyberstrike-ai/internal/audit"
+	"cyberstrike-ai/internal/authctx"
 	"cyberstrike-ai/internal/c2"
 	"cyberstrike-ai/internal/config"
 	"cyberstrike-ai/internal/database"
@@ -123,6 +125,7 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 
 	// 创建MCP服务器（带数据库持久化）
 	mcpServer := mcp.NewServerWithStorage(log.Logger, db)
+	mcpServer.SetToolAuthorizer(mcpToolAuthorizer(db))
 	mcpServer.ConfigureHTTPToolCallTimeoutFromAgentMinutes(cfg.Agent.ToolTimeoutMinutes)
 
 	// 创建安全工具执行器
@@ -146,6 +149,7 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 
 	// 创建外部MCP管理器（使用与内部MCP服务器相同的存储）
 	externalMCPMgr := mcp.NewExternalMCPManagerWithStorage(log.Logger, db)
+	externalMCPMgr.SetToolAuthorizer(externalMCPToolAuthorizer())
 	if cfg.ExternalMCP.Servers != nil {
 		externalMCPMgr.LoadConfigs(&cfg.ExternalMCP)
 		// 启动所有启用的外部MCP客户端
@@ -372,7 +376,7 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 	vulnerabilityHandler.SetAudit(auditSvc)
 	webshellHandler := handler.NewWebShellHandler(log.Logger, db)
 	webshellHandler.SetAudit(auditSvc)
-	chatUploadsHandler := handler.NewChatUploadsHandler(log.Logger)
+	chatUploadsHandler := handler.NewChatUploadsHandler(log.Logger, db)
 	chatUploadsHandler.SetAudit(auditSvc)
 	registerWebshellTools(mcpServer, db, webshellHandler, log.Logger)
 	registerWebshellManagementTools(mcpServer, db, webshellHandler, log.Logger)
@@ -541,6 +545,7 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 		terminalHandler,
 		app.c2Handler,
 		auditHandler,
+		auditSvc,
 		rbacHandler,
 		mcpServer,
 		authManager,
@@ -554,17 +559,30 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 // mcpHandlerWithAuth 在鉴权通过后转发到 MCP 处理；若配置了 auth_header 则校验请求头，否则直接放行
 func (a *App) mcpHandlerWithAuth(w http.ResponseWriter, r *http.Request) {
 	cfg := a.config.MCP
-	if cfg.AuthHeader != "" {
-		actual := []byte(r.Header.Get(cfg.AuthHeader))
-		expected := []byte(cfg.AuthHeaderValue)
-		if subtle.ConstantTimeCompare(actual, expected) != 1 {
-			a.logger.Logger.Debug("MCP 鉴权失败：header 缺失或值不匹配", zap.String("header", cfg.AuthHeader))
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte(`{"error":"unauthorized"}`))
+	if authHeader := strings.TrimSpace(r.Header.Get("Authorization")); len(authHeader) > 7 && strings.EqualFold(authHeader[:7], "Bearer ") {
+		if session, ok := a.auth.ValidateToken(strings.TrimSpace(authHeader[7:])); ok && session.Permissions["mcp:execute"] {
+			principal := authctx.NewPrincipalWithScopes(session.UserID, session.Username, session.Scope, session.Permissions, session.PermissionScopes)
+			a.mcpServer.HandleHTTP(w, r.WithContext(authctx.WithPrincipal(r.Context(), principal)))
 			return
 		}
 	}
+	if !cfg.AllowGlobalAccess || strings.TrimSpace(cfg.AuthHeader) == "" || strings.TrimSpace(cfg.AuthHeaderValue) == "" {
+		http.Error(w, "use an authorized user bearer token; global MCP service access is disabled", http.StatusUnauthorized)
+		return
+	}
+	if subtle.ConstantTimeCompare([]byte(r.Header.Get(cfg.AuthHeader)), []byte(cfg.AuthHeaderValue)) != 1 {
+		a.logger.Logger.Debug("MCP 鉴权失败：header 缺失或值不匹配", zap.String("header", cfg.AuthHeader))
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(`{"error":"unauthorized"}`))
+		return
+	}
+	permissions := make(map[string]bool, len(security.PermissionCatalog))
+	for permission := range security.PermissionCatalog {
+		permissions[permission] = true
+	}
+	principal := authctx.NewPrincipal("service:mcp", "mcp-service", database.RBACScopeAll, permissions)
+	r = r.WithContext(authctx.WithPrincipal(r.Context(), principal))
 	a.mcpServer.HandleHTTP(w, r)
 }
 
@@ -825,6 +843,7 @@ func setupRoutes(
 	terminalHandler *handler.TerminalHandler,
 	c2Handler *handler.C2Handler,
 	auditHandler *handler.AuditHandler,
+	auditSvc *audit.Service,
 	rbacHandler *handler.RBACHandler,
 	mcpServer *mcp.Server,
 	authManager *security.AuthManager,
@@ -835,8 +854,9 @@ func setupRoutes(
 
 	// 认证相关路由
 	authRoutes := api.Group("/auth")
+	loginRL := security.NewRateLimiter(10, 1*time.Minute)
 	{
-		authRoutes.POST("/login", authHandler.Login)
+		authRoutes.POST("/login", security.RateLimitMiddleware(loginRL), authHandler.Login)
 		authRoutes.POST("/logout", security.AuthMiddleware(authManager), authHandler.Logout)
 		authRoutes.POST("/change-password", security.AuthMiddleware(authManager), security.RequirePermission("auth:self"), authHandler.ChangePassword)
 		authRoutes.GET("/validate", security.AuthMiddleware(authManager), authHandler.Validate)
@@ -856,7 +876,15 @@ func setupRoutes(
 
 	protected := api.Group("")
 	protected.Use(security.AuthMiddleware(authManager))
-	protected.Use(security.RBACMiddleware(app.db))
+	protected.Use(security.RBACMiddlewareWithDenyHook(app.db, func(c *gin.Context, reason, permission string) {
+		if auditSvc != nil {
+			auditSvc.Record(c, audit.Entry{
+				Level: "warn", Category: "rbac", Action: "access_denied", Result: "failure",
+				Message: "RBAC 拒绝访问", ResourceType: "route", ResourceID: c.FullPath(),
+				Detail: map[string]interface{}{"reason": reason, "permission": permission, "method": c.Request.Method},
+			})
+		}
+	}))
 	{
 		protected.GET("/rbac/me", rbacHandler.Me)
 		protected.GET("/rbac/metadata", rbacHandler.Metadata)
@@ -1490,7 +1518,13 @@ func registerWebshellManagementTools(mcpServer *mcp.Server, db *database.DB, web
 		},
 	}
 	listHandler := func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
-		connections, err := db.ListWebshellConnections()
+		connections := []database.WebShellConnection{}
+		var err error
+		if principal, ok := authctx.PrincipalFromContext(ctx); ok {
+			connections, err = db.ListWebshellConnectionsForAccess(principal.UserID, principal.ScopeFor("webshell:read"))
+		} else {
+			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "缺少认证身份"}}, IsError: true}, nil
+		}
 		if err != nil {
 			return &mcp.ToolResult{
 				Content: []mcp.Content{{Type: "text", Text: "获取连接列表失败: " + err.Error()}},
@@ -1604,6 +1638,10 @@ func registerWebshellManagementTools(mcpServer *mcp.Server, db *database.DB, web
 				Content: []mcp.Content{{Type: "text", Text: "添加 WebShell 连接失败: " + err.Error()}},
 				IsError: true,
 			}, nil
+		}
+		if principal, ok := authctx.PrincipalFromContext(ctx); ok {
+			_ = db.SetResourceOwner("webshell", conn.ID, principal.UserID)
+			_ = db.AssignResourceToUser(principal.UserID, "webshell", conn.ID)
 		}
 
 		return &mcp.ToolResult{
@@ -2000,8 +2038,17 @@ func initializeKnowledge(
 // corsMiddleware CORS中间件
 func corsMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		origin := strings.TrimSpace(c.GetHeader("Origin"))
+		if origin != "" {
+			parsed, err := url.Parse(origin)
+			if err != nil || parsed.Host == "" || !strings.EqualFold(parsed.Host, c.Request.Host) {
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "cross-origin request denied"})
+				return
+			}
+			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+			c.Writer.Header().Add("Vary", "Origin")
+		}
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE")
 

@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"cyberstrike-ai/internal/authctx"
 	"cyberstrike-ai/internal/config"
 
 	"github.com/google/uuid"
@@ -37,29 +38,30 @@ type listToolsInflight struct {
 
 // ExternalMCPManager 外部MCP管理器
 type ExternalMCPManager struct {
-	clients      map[string]ExternalMCPClient
-	configs      map[string]config.ExternalMCPServerConfig
-	logger       *zap.Logger
-	storage      MonitorStorage            // 可选的持久化存储
-	executions   map[string]*ToolExecution // 执行记录
-	stats        map[string]*ToolStats     // 工具统计信息
-	errors       map[string]string         // 错误信息
-	toolCounts   map[string]int            // 工具数量缓存
-	toolCountsMu sync.RWMutex              // 工具数量缓存的锁
-	toolCache    map[string]toolListCacheEntry // 工具列表缓存：MCP名称 -> 工具列表
-	toolCacheMu  sync.RWMutex              // 工具列表缓存的锁
-	listToolsMu  sync.Mutex
+	clients           map[string]ExternalMCPClient
+	configs           map[string]config.ExternalMCPServerConfig
+	logger            *zap.Logger
+	storage           MonitorStorage                // 可选的持久化存储
+	executions        map[string]*ToolExecution     // 执行记录
+	stats             map[string]*ToolStats         // 工具统计信息
+	errors            map[string]string             // 错误信息
+	toolCounts        map[string]int                // 工具数量缓存
+	toolCountsMu      sync.RWMutex                  // 工具数量缓存的锁
+	toolCache         map[string]toolListCacheEntry // 工具列表缓存：MCP名称 -> 工具列表
+	toolCacheMu       sync.RWMutex                  // 工具列表缓存的锁
+	listToolsMu       sync.Mutex
 	listToolsInflight map[string]*listToolsInflight
-	stopRefresh  chan struct{}             // 停止后台刷新的信号
-	refreshWg    sync.WaitGroup            // 等待后台刷新goroutine完成
-	refreshing   atomic.Bool               // 防止 refreshToolCounts 并发堆积
-	mu           sync.RWMutex
+	stopRefresh       chan struct{}  // 停止后台刷新的信号
+	refreshWg         sync.WaitGroup // 等待后台刷新goroutine完成
+	refreshing        atomic.Bool    // 防止 refreshToolCounts 并发堆积
+	mu                sync.RWMutex
 	runningCancels    map[string]context.CancelFunc
 	abortUserNotes    map[string]string
 	reconnectMu       sync.Mutex
 	reconnecting      map[string]bool
 	reconnectLastTry  map[string]time.Time
 	reconnectAttempts map[string]int
+	toolAuthorizer    func(context.Context, string, map[string]interface{}) error
 }
 
 // NewExternalMCPManager 创建外部MCP管理器
@@ -67,16 +69,24 @@ func NewExternalMCPManager(logger *zap.Logger) *ExternalMCPManager {
 	return NewExternalMCPManagerWithStorage(logger, nil)
 }
 
+// SetToolAuthorizer installs the policy decision point for all external MCP
+// invocations. App wiring configures this before any Agent can call a tool.
+func (m *ExternalMCPManager) SetToolAuthorizer(authorizer func(context.Context, string, map[string]interface{}) error) {
+	m.mu.Lock()
+	m.toolAuthorizer = authorizer
+	m.mu.Unlock()
+}
+
 // NewExternalMCPManagerWithStorage 创建外部MCP管理器（带持久化存储）
 func NewExternalMCPManagerWithStorage(logger *zap.Logger, storage MonitorStorage) *ExternalMCPManager {
 	manager := &ExternalMCPManager{
-		clients:        make(map[string]ExternalMCPClient),
-		configs:        make(map[string]config.ExternalMCPServerConfig),
-		logger:         logger,
-		storage:        storage,
-		executions:     make(map[string]*ToolExecution),
-		stats:          make(map[string]*ToolStats),
-		errors:         make(map[string]string),
+		clients:           make(map[string]ExternalMCPClient),
+		configs:           make(map[string]config.ExternalMCPServerConfig),
+		logger:            logger,
+		storage:           storage,
+		executions:        make(map[string]*ToolExecution),
+		stats:             make(map[string]*ToolStats),
+		errors:            make(map[string]string),
 		toolCounts:        make(map[string]int),
 		toolCache:         make(map[string]toolListCacheEntry),
 		listToolsInflight: make(map[string]*listToolsInflight),
@@ -554,6 +564,17 @@ func (m *ExternalMCPManager) updateToolCache(name string, tools []Tool) {
 
 // CallTool 调用外部MCP工具（返回执行ID）
 func (m *ExternalMCPManager) CallTool(ctx context.Context, toolName string, args map[string]interface{}) (*ToolResult, string, error) {
+	_, authenticated := authctx.PrincipalFromContext(ctx)
+	m.mu.RLock()
+	authorizer := m.toolAuthorizer
+	m.mu.RUnlock()
+	if authorizer != nil {
+		if err := authorizer(ctx, toolName, args); err != nil {
+			return nil, "", fmt.Errorf("external tool authorization denied: %w", err)
+		}
+	} else if authenticated {
+		return nil, "", fmt.Errorf("external tool authorization policy is not configured")
+	}
 	// 解析工具名称：name::toolName
 	var mcpName, actualToolName string
 	if idx := findSubstring(toolName, "::"); idx > 0 {
@@ -591,6 +612,10 @@ func (m *ExternalMCPManager) CallTool(ctx context.Context, toolName string, args
 		Status:    "running",
 		StartTime: time.Now(),
 	}
+	if principal, ok := authctx.PrincipalFromContext(ctx); ok {
+		execution.OwnerUserID = principal.UserID
+	}
+	execution.ConversationID = MCPConversationIDFromContext(ctx)
 
 	m.mu.Lock()
 	m.executions[executionID] = execution

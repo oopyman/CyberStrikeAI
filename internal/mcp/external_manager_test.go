@@ -2,13 +2,29 @@ package mcp
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
+	"cyberstrike-ai/internal/authctx"
 	"cyberstrike-ai/internal/config"
 
 	"go.uber.org/zap"
 )
+
+func TestExternalManagerEnforcesConfiguredAuthorizer(t *testing.T) {
+	manager := NewExternalMCPManager(zap.NewNop())
+	t.Cleanup(manager.StopAll)
+	manager.SetToolAuthorizer(func(context.Context, string, map[string]interface{}) error {
+		return errors.New("denied by policy")
+	})
+	ctx := authctx.WithPrincipal(context.Background(), authctx.NewPrincipal("u1", "user", "assigned", map[string]bool{"agent:execute": true}))
+	_, _, err := manager.CallTool(ctx, "server::tool", map[string]interface{}{})
+	if err == nil || !strings.Contains(err.Error(), "authorization denied") {
+		t.Fatalf("external call bypassed authorizer: %v", err)
+	}
+}
 
 func TestExternalMCPManager_AddOrUpdateConfig(t *testing.T) {
 	logger := zap.NewNop()
