@@ -163,6 +163,17 @@ func TestSummarizationUserIntentLedgerRunesEffective(t *testing.T) {
 	}
 }
 
+func TestSummarizationOutputReserveTokensEffective(t *testing.T) {
+	var zero MultiAgentEinoMiddlewareConfig
+	if got := zero.SummarizationOutputReserveTokensEffective(); got != DefaultSummarizationOutputReserveTokens {
+		t.Fatalf("default output reserve = %d, want %d", got, DefaultSummarizationOutputReserveTokens)
+	}
+	custom := MultiAgentEinoMiddlewareConfig{SummarizationOutputReserveTokens: 4096}
+	if got := custom.SummarizationOutputReserveTokensEffective(); got != 4096 {
+		t.Fatalf("custom output reserve = %d", got)
+	}
+}
+
 func TestLatestUserMessageRunesEffective(t *testing.T) {
 	var zero MultiAgentEinoMiddlewareConfig
 	if got := zero.LatestUserMessageMaxRunesEffective(); got != DefaultLatestUserMessageMaxRunes {

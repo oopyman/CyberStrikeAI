@@ -54,6 +54,7 @@ const (
 	DefaultLatestUserMessageMaxRunes                  = 48000
 	DefaultLatestUserMessageHeadRunes                 = 24000
 	DefaultLatestUserMessageTailRunes                 = 24000
+	DefaultSummarizationOutputReserveTokens           = 8192
 )
 
 // ProjectConfig 项目黑板（跨对话共享事实）配置。
@@ -268,6 +269,8 @@ type MultiAgentEinoMiddlewareConfig struct {
 	ReductionSubAgents         bool     `yaml:"reduction_sub_agents,omitempty" json:"reduction_sub_agents,omitempty"` // also attach to sub-agents
 	// SummarizationTriggerRatio controls summarization trigger threshold as max_total_tokens * ratio (default 0.8).
 	SummarizationTriggerRatio float64 `yaml:"summarization_trigger_ratio,omitempty" json:"summarization_trigger_ratio,omitempty"`
+	// SummarizationOutputReserveTokens reserves completion headroom for the summarization model call (default 8192).
+	SummarizationOutputReserveTokens int `yaml:"summarization_output_reserve_tokens,omitempty" json:"summarization_output_reserve_tokens,omitempty"`
 	// SummarizationEmitInternalEvents controls middleware internal event emission (default true).
 	SummarizationEmitInternalEvents *bool `yaml:"summarization_emit_internal_events,omitempty" json:"summarization_emit_internal_events,omitempty"`
 	// SummarizationUserIntentLedgerMaxRunes caps the DB-backed immutable user input ledger injected into model context.
@@ -318,6 +321,13 @@ func (c MultiAgentEinoMiddlewareConfig) SummarizationTriggerRatioEffective() flo
 		return 0.95
 	}
 	return v
+}
+
+func (c MultiAgentEinoMiddlewareConfig) SummarizationOutputReserveTokensEffective() int {
+	if c.SummarizationOutputReserveTokens > 0 {
+		return c.SummarizationOutputReserveTokens
+	}
+	return DefaultSummarizationOutputReserveTokens
 }
 
 func (c MultiAgentEinoMiddlewareConfig) SummarizationEmitInternalEventsEffective() bool {
@@ -1246,7 +1256,7 @@ func EnsureLocalConfig(path string) (EnsureLocalConfigResult, error) {
 
 	if _, err := os.Stat(path); err == nil {
 		return EnsureLocalConfigResult{}, nil
-	} else if err != nil && !os.IsNotExist(err) {
+	} else if !os.IsNotExist(err) {
 		return EnsureLocalConfigResult{}, fmt.Errorf("检查配置文件失败: %w", err)
 	}
 
