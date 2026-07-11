@@ -48,7 +48,7 @@ config.yaml
 
 ```yaml
 auth:
-  password: "<long-random-password>"
+  session_duration_hours: 12
 server:
   host: 127.0.0.1
   port: 8080

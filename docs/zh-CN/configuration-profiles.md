@@ -21,7 +21,7 @@ server:
   tls_enabled: true
   tls_auto_self_sign: true
 auth:
-  password: "dev-only-change-me"
+  session_duration_hours: 12
 audit:
   enabled: true
   retention_days: 7
@@ -54,7 +54,7 @@ server:
   port: 8080
   tls_enabled: false
 auth:
-  password: "<long-random-password>"
+  session_duration_hours: 12
 audit:
   enabled: true
   retention_days: 30
@@ -107,7 +107,6 @@ multi_agent:
 
 ```yaml
 auth:
-  password: "<managed-secret>"
   session_duration_hours: 8
 audit:
   enabled: true

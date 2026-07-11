@@ -212,7 +212,7 @@ The `run.sh` script will automatically:
        model: "gpt-4o"  # or deepseek-chat, claude-3-opus, etc.
      ```
    - Or edit `config.yaml` directly before launching
-2. **Login** - Use the auto-generated password shown in the console (or set `auth.password` in `config.yaml`)
+2. **Login** - On first startup the console prints an auto-generated initial `admin` password; create accounts from **Platform permissions → User management**
 3. **Install security tools (optional)** - Install tools from `tools/` as needed; missing tools are skipped or substituted at runtime. Common examples:
 
    **macOS (Homebrew):**
@@ -281,7 +281,7 @@ Requirements / tips:
 
 ### Built-in Safeguards
 - Required-field validation prevents accidental blank API credentials.
-- Auto-generated strong passwords when `auth.password` is empty.
+- Auto-generated 24-character initial `admin` password on first startup when no RBAC users exist (stored in the database only, not in `config.yaml`).
 - Unified auth middleware for every web/API call (Bearer token flow).
 - Timeout and sandbox guards per tool, plus structured logging for triage.
 
@@ -537,7 +537,6 @@ A test SSE MCP server is available at `cmd/test-sse-mcp-server/` for validation 
 
 ```yaml
 auth:
-  password: "change-me"
   session_duration_hours: 12
 server:
   host: "0.0.0.0"

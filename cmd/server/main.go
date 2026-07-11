@@ -5,6 +5,7 @@ import (
 	"cyberstrike-ai/internal/app"
 	"cyberstrike-ai/internal/config"
 	"cyberstrike-ai/internal/logger"
+	"cyberstrike-ai/internal/termout"
 	"flag"
 	"fmt"
 	"os"
@@ -47,8 +48,7 @@ func main() {
 		return
 	}
 	if localConfig.Created {
-		cfg.Auth.GeneratedPassword = localConfig.GeneratedPassword
-		cfg.Auth.GeneratedPasswordPersisted = true
+		termout.PrintConfigCreated()
 	}
 
 	if *httpsBootstrap {
@@ -63,15 +63,12 @@ func main() {
 	if config.MainWebUIUsesHTTPS(&cfg.Server) {
 		scheme = "https"
 	}
-	fmt.Println()
-	fmt.Printf("→ Web 界面: %s://127.0.0.1:%d/\n", scheme, port)
-	if scheme == "https" && cfg.Server.TLSAutoSelfSign {
-		fmt.Println("  （内存自签证书：浏览器首次需确认「继续访问」）")
-	}
-	if scheme == "https" && config.ServerHTTPRedirectEnabled(&cfg.Server) {
-		fmt.Printf("  （http://127.0.0.1:%d/ 将自动跳转到 HTTPS）\n", port)
-	}
-	fmt.Println()
+	termout.PrintStartupWebUI(termout.StartupWebUIOptions{
+		Scheme:       scheme,
+		Port:         port,
+		SelfSigned:   scheme == "https" && cfg.Server.TLSAutoSelfSign,
+		HTTPRedirect: scheme == "https" && config.ServerHTTPRedirectEnabled(&cfg.Server),
+	})
 
 	// MCP 启用且 auth_header_value 为空时，自动生成随机密钥并写回配置
 	if err := config.EnsureMCPAuth(cp, cfg); err != nil {

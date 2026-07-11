@@ -12,7 +12,6 @@ server:
   port: 8080
   tls_enabled: true
 auth:
-  password: "change-me"
   session_duration_hours: 12
 openai:
   provider: openai
@@ -24,7 +23,7 @@ agent:
   tool_timeout_minutes: 60
 ```
 
-Change the default password immediately. Use HTTPS or a trusted reverse proxy in any shared environment.
+Change the initial `admin` password from the Web UI after first login. Use HTTPS or a trusted reverse proxy in any shared environment.
 
 ## Hot-Apply Boundaries
 

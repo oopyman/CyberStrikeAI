@@ -6,7 +6,7 @@ This checklist covers pre-production and continuous hardening for CyberStrikeAI.
 
 ## Before Going Live
 
-- Change `auth.password` to a long random secret.
+- Change the initial `admin` password from the Web UI after first login.
 - Use HTTPS or a trusted reverse proxy.
 - Restrict access by IP, VPN, or bastion.
 - Enable `audit.enabled`.

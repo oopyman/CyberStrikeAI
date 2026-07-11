@@ -37,7 +37,7 @@ Page inaccessible:
 
 Login fails:
 
-- wrong `auth.password`;
+- wrong RBAC user password;
 - config not applied/restarted;
 - stale cookie;
 - audit throttling repeated failures.

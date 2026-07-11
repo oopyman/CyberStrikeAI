@@ -211,7 +211,7 @@ chmod +x run.sh && ./run.sh
        model: "gpt-4o"  # 或 deepseek-chat, claude-3-opus 等
      ```
    - 或启动前直接编辑 `config.yaml` 文件
-2. **登录系统** - 使用控制台显示的自动生成密码（或在 `config.yaml` 中设置 `auth.password`）
+2. **登录系统** - 首次启动时控制台会显示自动生成的 `admin` 初始密码；也可在「平台权限 → 用户管理」中创建账号
 3. **安装安全工具（可选）** - 按需安装 `tools/` 目录中的工具；未安装的工具在执行时会自动跳过或改用替代方案。常用示例：
 
    **macOS（Homebrew）：**
@@ -279,7 +279,7 @@ go build -o cyberstrike-ai cmd/server/main.go
 
 ### 默认安全措施
 - 设置面板内置必填校验，防止漏配 API Key/Base URL/模型。
-- `auth.password` 为空时自动生成 24 位强口令并写回 `config.yaml`。
+- 首次启动且无 RBAC 用户时，自动生成 24 位 `admin` 初始密码并在控制台输出（仅存于数据库，不再写入 `config.yaml`）。
 - 所有 API（除登录外）都需携带 Bearer Token，统一鉴权中间件拦截。
 - 每个工具执行都带有超时、日志和错误隔离。
 
@@ -535,7 +535,6 @@ CyberStrikeAI 支持通过三种传输模式连接外部 MCP 服务器：
 
 ```yaml
 auth:
-  password: "change-me"
   session_duration_hours: 12
 server:
   host: "0.0.0.0"

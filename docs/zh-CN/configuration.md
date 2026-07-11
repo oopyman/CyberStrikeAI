@@ -12,7 +12,6 @@ server:
   tls_enabled: true
   tls_auto_self_sign: true
 auth:
-  password: "change-me"
   session_duration_hours: 12
 log:
   level: info
@@ -22,7 +21,7 @@ log:
 - `version`：前端展示版本。
 - `server.host/port`：Web 服务监听地址和端口。
 - `server.tls_*`：HTTPS 配置。生产环境建议使用 `tls_cert_path` 和 `tls_key_path`。
-- `auth.password`：Web 登录密码，必须改为强密码。
+- `auth.session_duration_hours`：登录会话有效期（小时）。登录密码由 RBAC 用户管理，首次启动时在控制台输出 `admin` 初始密码。
 - `auth.session_duration_hours`：登录会话有效期。
 - `log.output`：可以是 `stdout`、`stderr` 或文件路径。
 
