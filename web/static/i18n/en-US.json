@@ -3714,6 +3714,28 @@
     "auditHint": "Audit events related to this member's platform access.",
     "unknownActor": "Unknown actor",
     "metricUserContext": "Selected member: {{name}} · {{roles}} roles · {{grants}} grants",
+    "currentMemberLabel": "Selected member",
+    "auditPageSizeLabel": "Rows per page",
+    "auditPageSize20": "20 / page",
+    "auditPageSize50": "50 / page",
+    "auditPageSize100": "100 / page",
+    "auditFilters": {
+      "filterBarLabel": "Change history filters",
+      "actionLabel": "Filter by action",
+      "allActions": "All actions",
+      "actorPlaceholder": "Actor username",
+      "resourceTypeLabel": "Filter by resource type",
+      "allResourceTypes": "All resource types"
+    },
+    "unknownTarget": "Unknown member",
+    "auditColumns": {
+      "action": "Action",
+      "actor": "Actor",
+      "target": "Target member",
+      "resourceType": "Resource type",
+      "resourceId": "Resource ID",
+      "time": "Time"
+    },
     "deleteUserConfirmDetailed": "Delete member {{name}} (@{{username}})?\n\nThis will revoke active sessions and remove {{roles}} role bindings and {{grants}} resource grants.",
     "auditActions": {
       "create_user": "Create platform user",
@@ -3730,13 +3752,19 @@
     "resourceIdLabel": "ID",
     "resourceDetailProject": "Project {{id}}",
     "pagination": {
+      "first": "First",
       "previous": "Previous",
       "next": "Next",
+      "last": "Last",
+      "rowsPerPage": "Rows per page",
+      "recordRange": "Showing {{start}}-{{end}} of {{total}} records",
+      "pageIndicator": "Page {{page}} / {{pages}}",
       "resourcePage": "Page {{page}}",
       "pageSummary": "Page {{page}} / {{pages}} · {{total}} items",
       "emptySummary": "0 items"
     },
     "resourceTypes": {
+      "user": "Platform user",
       "project": "Project",
       "conversation": "Conversation",
       "vulnerability": "Vulnerability",

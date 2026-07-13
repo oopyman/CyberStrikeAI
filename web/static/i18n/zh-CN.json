@@ -3702,6 +3702,28 @@
     "auditHint": "展示该成员相关的平台权限操作审计。",
     "unknownActor": "未知操作者",
     "metricUserContext": "当前成员：{{name}} · {{roles}} 个角色 · {{grants}} 项授权",
+    "currentMemberLabel": "当前成员",
+    "auditPageSizeLabel": "每页显示条数",
+    "auditPageSize20": "20 条/页",
+    "auditPageSize50": "50 条/页",
+    "auditPageSize100": "100 条/页",
+    "auditFilters": {
+      "filterBarLabel": "变更记录筛选",
+      "actionLabel": "按操作筛选",
+      "allActions": "全部操作",
+      "actorPlaceholder": "操作人账号",
+      "resourceTypeLabel": "按资源类型筛选",
+      "allResourceTypes": "全部资源类型"
+    },
+    "unknownTarget": "未知成员",
+    "auditColumns": {
+      "action": "操作",
+      "actor": "操作人",
+      "target": "操作对象",
+      "resourceType": "资源类型",
+      "resourceId": "资源 ID",
+      "time": "操作时间"
+    },
     "deleteUserConfirmDetailed": "确认删除成员 {{name}}（@{{username}}）？\n\n将立即吊销其会话，并清除 {{roles}} 个角色绑定与 {{grants}} 项资源授权。",
     "auditActions": {
       "create_user": "创建平台用户",
@@ -3718,13 +3740,19 @@
     "resourceIdLabel": "ID",
     "resourceDetailProject": "所属项目 {{id}}",
     "pagination": {
+      "first": "首页",
       "previous": "上一页",
       "next": "下一页",
+      "last": "末页",
+      "rowsPerPage": "每页显示",
+      "recordRange": "显示 {{start}}-{{end}} / 共 {{total}} 条记录",
+      "pageIndicator": "第 {{page}} / {{pages}} 页",
       "resourcePage": "第 {{page}} 页",
       "pageSummary": "第 {{page}} / {{pages}} 页 · 共 {{total}} 项",
       "emptySummary": "共 0 项"
     },
     "resourceTypes": {
+      "user": "平台用户",
       "project": "项目",
       "conversation": "对话",
       "vulnerability": "漏洞",

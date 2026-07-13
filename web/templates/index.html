@@ -4210,7 +4210,7 @@
                                         <h2 data-i18n="rbac.title">平台权限</h2>
                                     </div>
                                     <div class="page-header-actions">
-                                        <button class="btn-secondary" type="button" onclick="loadPlatformRbac()" data-i18n="common.refresh">刷新</button>
+                                        <button class="btn-secondary" type="button" onclick="refreshPlatformRbac(this)" data-i18n="common.refresh">刷新</button>
                                         <button class="btn-secondary" type="button" onclick="openRbacRoleModal()" data-i18n="rbac.createRole">新建角色</button>
                                         <button class="btn-primary" type="button" onclick="openRbacUserModal()" data-i18n="rbac.createUser">添加成员</button>
                                     </div>
@@ -4235,7 +4235,7 @@
                                                 <span data-i18n="rbac.metricAssignmentsPill">项授权</span>
                                             </div>
                                         </div>
-                                        <p id="rbac-metric-context" class="rbac-metric-context" hidden></p>
+                                        <div id="rbac-metric-context" class="rbac-metric-context" hidden></div>
                                         <div class="rbac-workspace-nav" role="tablist" aria-label="权限管理视图">
                                             <button type="button" class="rbac-workspace-tab is-active" role="tab" aria-selected="true" data-rbac-view="users" onclick="switchRbacView('users')">
                                                 <span data-i18n="rbac.memberManagement">成员管理</span>
@@ -4296,35 +4296,7 @@
                                                 <div id="rbac-roles-list" class="rbac-role-grid"></div>
                                             </div>
                                             <div id="rbac-tab-assignments" class="rbac-tab-panel" hidden>
-                                                <div class="rbac-assignment-controls">
-                                                <div class="rbac-assignment-toolbar">
-                                                    <div class="rbac-assignment-toolbar-main">
-                                                        <div class="rbac-assignment-field">
-                                                            <label for="rbac-assignment-type" data-i18n="rbac.resourceType">资源类型</label>
-                                                            <select id="rbac-assignment-type" class="form-select rbac-form-select" onchange="changeRbacResourceType()">
-                                                                <option value="conversation" data-i18n="rbac.resourceTypes.conversation">对话</option>
-                                                                <option value="project" data-i18n="rbac.resourceTypes.project">项目</option>
-                                                                <option value="batch_task" data-i18n="rbac.resourceTypes.batch_task">批量任务</option>
-                                                                <option value="vulnerability" data-i18n="rbac.resourceTypes.vulnerability">漏洞</option>
-                                                                <option value="webshell" data-i18n="rbac.resourceTypes.webshell">WebShell 连接</option>
-                                                                <option value="c2_listener" data-i18n="rbac.resourceTypes.c2_listener">C2 监听器</option>
-                                                            </select>
-                                                        </div>
-                                                        <div class="rbac-assignment-field rbac-assignment-field--search">
-                                                            <label for="rbac-resource-search" data-i18n="rbac.searchResource">搜索真实资源</label>
-                                                            <input id="rbac-resource-search" class="form-input" type="search" placeholder="按名称或 ID 搜索" data-i18n="rbac.searchResourcePlaceholder" data-i18n-attr="placeholder" oninput="queueRbacResourceSearch(this.value)">
-                                                        </div>
-                                                    </div>
-                                                    <details class="rbac-advanced-assignment rbac-advanced-assignment--inline">
-                                                        <summary data-i18n="rbac.advancedAssignment">高级：直接输入资源 ID</summary>
-                                                        <div class="rbac-advanced-assignment-body">
-                                                            <input id="rbac-assignment-id" class="form-input" type="text" placeholder="输入资源 ID；多个 ID 用逗号分隔" data-i18n="rbac.resourceIdPlaceholder" data-i18n-attr="placeholder" oninput="syncRbacAssignmentSubmit()">
-                                                            <span data-i18n="rbac.advancedAssignmentHint">适用于从日志或 API 复制的已知 ID，提交时仍会验证资源是否存在。</span>
-                                                        </div>
-                                                    </details>
-                                                </div>
                                                 <p class="rbac-assignment-help" data-i18n="rbac.assignmentHelp">仅“指定资源”范围的角色需要单独授权。项目授权会覆盖该项目下的对话和漏洞。</p>
-                                                </div>
                                                 <div id="rbac-pending-bar" class="rbac-pending-bar" hidden>
                                                     <div class="rbac-pending-bar-head">
                                                         <strong id="rbac-pending-title" data-i18n="rbac.pendingGrants">待授权</strong>
@@ -4344,6 +4316,18 @@
                                                                 <span data-i18n="rbac.availableResourcesHint">勾选当前页资源，可跨页累计选择</span>
                                                             </div>
                                                         </div>
+                                                        <div class="rbac-assignment-filterbar rbac-resource-filterbar">
+                                                            <select id="rbac-assignment-type" class="form-select rbac-form-select" onchange="changeRbacResourceType()">
+                                                                <option value="conversation" data-i18n="rbac.resourceTypes.conversation">对话</option>
+                                                                <option value="project" data-i18n="rbac.resourceTypes.project">项目</option>
+                                                                <option value="batch_task" data-i18n="rbac.resourceTypes.batch_task">批量任务</option>
+                                                                <option value="vulnerability" data-i18n="rbac.resourceTypes.vulnerability">漏洞</option>
+                                                                <option value="webshell" data-i18n="rbac.resourceTypes.webshell">WebShell 连接</option>
+                                                                <option value="c2_listener" data-i18n="rbac.resourceTypes.c2_listener">C2 监听器</option>
+                                                            </select>
+                                                            <input id="rbac-resource-search" class="form-input" type="search" placeholder="按名称或 ID 搜索可授权资源" data-i18n="rbac.searchResourcePlaceholder" data-i18n-attr="placeholder" oninput="queueRbacResourceSearch(this.value)">
+                                                            <input id="rbac-assignment-id" class="form-input" type="text" placeholder="多个 ID 用逗号分隔" data-i18n="rbac.resourceIdPlaceholder" data-i18n-attr="placeholder" oninput="syncRbacAssignmentSubmit()">
+                                                        </div>
                                                         <div id="rbac-resource-picker" class="rbac-resource-picker"></div>
                                                         <div id="rbac-resource-pagination" class="rbac-pagination">
                                                             <button type="button" class="btn-secondary btn-small" data-rbac-page-previous onclick="changeRbacResourcePage(-1)" data-i18n="rbac.pagination.previous">上一页</button>
@@ -4357,6 +4341,8 @@
                                                                 <strong data-i18n="rbac.currentAssignments">当前单独授权</strong>
                                                                 <span><span id="rbac-current-assignment-count">0</span> <span data-i18n="rbac.items">项</span></span>
                                                             </div>
+                                                        </div>
+                                                        <div class="rbac-assignment-filterbar">
                                                             <div class="rbac-assignment-filters">
                                                                 <select id="rbac-assignment-filter-type" class="form-select rbac-form-select" onchange="changeRbacAssignmentFilter(this.value)" aria-label="筛选资源类型">
                                                                     <option value="all" data-i18n="rbac.allResourceTypes">全部类型</option>
@@ -4380,15 +4366,59 @@
                                                 </div>
                                             </div>
                                             <div id="rbac-tab-audit" class="rbac-tab-panel" hidden>
-                                                <div class="rbac-section-toolbar">
-                                                    <div>
+                                                <div class="rbac-audit-toolbar">
+                                                    <div class="rbac-audit-heading">
                                                         <strong data-i18n="rbac.auditTitle">权限变更记录</strong>
                                                         <p class="rbac-muted" data-i18n="rbac.auditHint">展示该成员相关的平台权限操作审计。</p>
                                                     </div>
-                                                    <button type="button" class="btn-secondary btn-small" onclick="loadRbacUserAuditLogs()" data-i18n="common.refresh">刷新</button>
+                                                    <div class="rbac-audit-filterbar" role="search" aria-label="变更记录筛选" data-i18n="rbac.auditFilters.filterBarLabel" data-i18n-attr="aria-label">
+                                                        <label class="rbac-audit-filter rbac-audit-filter--action">
+                                                            <span data-i18n="rbac.auditColumns.action">操作</span>
+                                                            <select id="rbac-audit-action-filter" class="form-select rbac-form-select" onchange="setRbacAuditFilter('action', this.value)" aria-label="按操作筛选" data-i18n="rbac.auditFilters.actionLabel" data-i18n-attr="aria-label">
+                                                                <option value="" data-i18n="rbac.auditFilters.allActions">全部操作</option>
+                                                                <option value="assign_resource" data-i18n="rbac.auditActions.assign_resource">授权资源访问</option>
+                                                                <option value="delete_resource_assignment" data-i18n="rbac.auditActions.delete_resource_assignment">撤销资源授权</option>
+                                                                <option value="create_user" data-i18n="rbac.auditActions.create_user">创建平台用户</option>
+                                                                <option value="update_user" data-i18n="rbac.auditActions.update_user">更新平台用户</option>
+                                                            </select>
+                                                        </label>
+                                                        <label class="rbac-audit-filter rbac-audit-filter--resource">
+                                                            <span data-i18n="rbac.auditColumns.resourceType">资源类型</span>
+                                                            <select id="rbac-audit-resource-type-filter" class="form-select rbac-form-select" onchange="setRbacAuditFilter('resourceType', this.value)" aria-label="按资源类型筛选" data-i18n="rbac.auditFilters.resourceTypeLabel" data-i18n-attr="aria-label">
+                                                                <option value="" data-i18n="rbac.auditFilters.allResourceTypes">全部资源类型</option>
+                                                                <option value="user" data-i18n="rbac.resourceTypes.user">平台用户</option>
+                                                                <option value="project" data-i18n="rbac.resourceTypes.project">项目</option>
+                                                                <option value="conversation" data-i18n="rbac.resourceTypes.conversation">对话</option>
+                                                                <option value="vulnerability" data-i18n="rbac.resourceTypes.vulnerability">漏洞</option>
+                                                                <option value="webshell" data-i18n="rbac.resourceTypes.webshell">WebShell 连接</option>
+                                                                <option value="batch_task" data-i18n="rbac.resourceTypes.batch_task">批量任务</option>
+                                                                <option value="c2_listener" data-i18n="rbac.resourceTypes.c2_listener">C2 监听器</option>
+                                                            </select>
+                                                        </label>
+                                                    </div>
                                                 </div>
                                                 <div id="rbac-audit-list" class="rbac-audit-list">
                                                     <div class="rbac-empty"><strong data-i18n="rbac.empty.selectUserFirst">请先选择用户</strong></div>
+                                                </div>
+                                                <div id="rbac-audit-pagination" class="rbac-pagination rbac-audit-pagination">
+                                                    <div class="rbac-audit-pagination-meta">
+                                                        <span data-rbac-page-range>显示 0-0 / 共 0 条记录</span>
+                                                        <label class="rbac-audit-page-size-control">
+                                                            <span data-i18n="rbac.pagination.rowsPerPage">每页显示</span>
+                                                            <select id="rbac-audit-page-size" class="form-select rbac-form-select" onchange="changeRbacAuditPageSize(this.value)" aria-label="每页显示条数" data-i18n="rbac.auditPageSizeLabel" data-i18n-attr="aria-label">
+                                                                <option value="20">20</option>
+                                                                <option value="50">50</option>
+                                                                <option value="100">100</option>
+                                                            </select>
+                                                        </label>
+                                                    </div>
+                                                    <div class="rbac-audit-pagination-nav">
+                                                        <button type="button" class="btn-secondary btn-small" data-rbac-page-first onclick="setRbacAuditPage(0)" data-i18n="rbac.pagination.first" disabled>首页</button>
+                                                        <button type="button" class="btn-secondary btn-small" data-rbac-page-previous onclick="changeRbacAuditPage(-1)" data-i18n="rbac.pagination.previous" disabled>上一页</button>
+                                                        <span data-rbac-page-info>第 1 / 1 页</span>
+                                                        <button type="button" class="btn-secondary btn-small" data-rbac-page-next onclick="changeRbacAuditPage(1)" data-i18n="rbac.pagination.next" disabled>下一页</button>
+                                                        <button type="button" class="btn-secondary btn-small" data-rbac-page-last onclick="setRbacAuditPage(-1)" data-i18n="rbac.pagination.last" disabled>末页</button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </section>

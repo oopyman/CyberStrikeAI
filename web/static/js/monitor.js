@@ -1314,8 +1314,8 @@ function integrateProgressToMCPSection(progressId, assistantMessageId, mcpExecut
         return;
     }
 
-    if (mcpIds.length > 0 && typeof window.appendMcpCallButtons === 'function') {
-        window.appendMcpCallButtons(assistantElement, mcpIds);
+    if (mcpIds.length > 0 && typeof window.setMcpCallExecutionIds === 'function') {
+        window.setMcpCallExecutionIds(assistantElement, mcpIds);
         const toolList = mcpSection.querySelector('.mcp-tool-list');
         if (toolList) toolList.classList.remove('expanded');
     }

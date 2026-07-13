@@ -2178,19 +2178,20 @@ function addMessage(role, content, mcpExecutionIds = null, progressId = null, cr
         timeDiv.dataset.messageTime = messageTime.toISOString();
     } catch (e) { /* ignore */ }
     contentWrapper.appendChild(timeDiv);
+    messageDiv.appendChild(contentWrapper);
     
     // 有 MCP 执行记录且非流式占位消息时展示调用按钮；带 progressId 的流式占位不挂此条（与进度卡片一致，结束时 integrate 再创建）
     if (role === 'assistant' && (mcpExecutionIds && Array.isArray(mcpExecutionIds) && mcpExecutionIds.length > 0) && !progressId) {
         if (options && options.deferMcpButtons) {
             try {
-                messageDiv.dataset.pendingMcpExecutionIds = JSON.stringify(mcpExecutionIds);
+                const ids = cacheMcpExecutionIds(messageDiv, mcpExecutionIds);
+                messageDiv.dataset.pendingMcpExecutionIds = JSON.stringify(ids);
             } catch (e) { /* ignore */ }
         } else {
-            appendMcpCallButtons(messageDiv, mcpExecutionIds);
+            setMcpCallExecutionIds(messageDiv, mcpExecutionIds);
         }
     }
     
-    messageDiv.appendChild(contentWrapper);
     // 标记「系统就绪」占位消息，便于切换语言后刷新文案
     if (options && options.systemReadyMessage) {
         messageDiv.setAttribute('data-system-ready-message', '1');
@@ -2935,23 +2936,6 @@ window.addEventListener('beforeunload', () => {
     }
 });
 
-// 异步获取工具名称并更新按钮文本
-async function updateButtonWithToolName(button, executionId, index) {
-    try {
-        const response = await apiFetch(`/api/monitor/execution/${executionId}`);
-        if (response.ok) {
-            const exec = await response.json();
-            const toolName = exec.toolName || (typeof window.t === 'function' ? window.t('chat.unknownTool') : '未知工具');
-            // 格式化工具名称（如果是 name::toolName 格式，只显示 toolName 部分）
-            const displayToolName = toolName.includes('::') ? toolName.split('::')[1] : toolName;
-            button.querySelector('span').textContent = `${displayToolName} #${index}`;
-        }
-    } catch (error) {
-        // 如果获取失败，保持原有文本不变
-        console.error('获取工具名称失败:', error);
-    }
-}
-
 function getPendingMcpExecutionCount(messageElement) {
     if (!messageElement || !messageElement.dataset || !messageElement.dataset.pendingMcpExecutionIds) {
         return 0;
@@ -2983,7 +2967,7 @@ function getMcpExecutionCount(messageElement) {
     if (pendingSummaries > 0) return pendingSummaries;
     const toolList = messageElement && messageElement.querySelector('.mcp-tool-list');
     if (toolList) {
-        const rendered = toolList.querySelectorAll('.mcp-detail-btn[data-exec-id], .mcp-detail-btn[data-tool-summary]').length;
+        const rendered = toolList.querySelectorAll('.mcp-detail-btn').length;
         if (rendered > 0) return rendered;
     }
     if (messageElement && messageElement.dataset && messageElement.dataset.mcpExecutionCount) {
@@ -3013,16 +2997,43 @@ function collectMcpExecutionIdsFromProcessDetails(processDetails) {
     return ids;
 }
 
+function normalizeMcpExecutionIds(executionIds) {
+    if (!Array.isArray(executionIds)) return [];
+    const seen = new Set();
+    return executionIds.reduce((ids, value) => {
+        const id = value == null ? '' : String(value).trim();
+        if (id && !seen.has(id)) {
+            seen.add(id);
+            ids.push(id);
+        }
+        return ids;
+    }, []);
+}
+
+function cacheMcpExecutionIds(messageElement, executionIds) {
+    if (!messageElement || !messageElement.dataset) return [];
+    const ids = normalizeMcpExecutionIds(executionIds);
+    if (ids.length > 0) {
+        messageElement.dataset.mcpExecutionIds = JSON.stringify(ids);
+    } else {
+        delete messageElement.dataset.mcpExecutionIds;
+    }
+    return ids;
+}
+
+function getCachedMcpExecutionIds(messageElement) {
+    if (!messageElement || !messageElement.dataset || !messageElement.dataset.mcpExecutionIds) return [];
+    try {
+        return normalizeMcpExecutionIds(JSON.parse(messageElement.dataset.mcpExecutionIds));
+    } catch (e) {
+        delete messageElement.dataset.mcpExecutionIds;
+        return [];
+    }
+}
+
 function setPendingMcpExecutionIds(messageElement, executionIds) {
     if (!messageElement || !messageElement.dataset || !Array.isArray(executionIds)) return;
-    const seen = new Set();
-    const ids = [];
-    executionIds.forEach((value) => {
-        const id = value == null ? '' : String(value).trim();
-        if (!id || seen.has(id)) return;
-        seen.add(id);
-        ids.push(id);
-    });
+    const ids = cacheMcpExecutionIds(messageElement, executionIds);
     if (ids.length > 0) {
         messageElement.dataset.pendingMcpExecutionIds = JSON.stringify(ids);
     } else {
@@ -3051,6 +3062,8 @@ function cacheToolExecutionSummaries(messageElement, summaries) {
         .filter((item) => item.toolName || item.executionId || item.toolCallId);
     if (normalized.length > 0) {
         messageElement.dataset.toolExecutionSummaries = JSON.stringify(normalized);
+    } else {
+        delete messageElement.dataset.toolExecutionSummaries;
     }
     return normalized;
 }
@@ -3075,8 +3088,8 @@ function setPendingToolExecutionSummaries(messageElement, summaries) {
         delete messageElement.dataset.pendingToolExecutionSummaries;
     }
     const renderedToolList = messageElement.querySelector('.mcp-tool-list');
-    if (normalized.length > 0 && renderedToolList && renderedToolList.querySelector('.mcp-detail-btn[data-exec-id], .mcp-detail-btn[data-tool-summary]')) {
-        appendMcpCallSummaryButtons(messageElement, normalized);
+    if (normalized.length > 0 && renderedToolList && renderedToolList.querySelector('.mcp-detail-btn')) {
+        setMcpCallSummaries(messageElement, normalized);
         delete messageElement.dataset.pendingToolExecutionSummaries;
         delete messageElement.dataset.pendingMcpExecutionIds;
     }
@@ -3136,17 +3149,10 @@ function ensureMcpCallSectionChrome(messageElement, messageId) {
     }
 
     let toolbar = mcpSection.querySelector('.mcp-call-toolbar');
-    const legacyButtons = mcpSection.querySelector('.mcp-call-buttons');
     if (!toolbar) {
         toolbar = document.createElement('div');
         toolbar.className = 'mcp-call-toolbar';
-        if (legacyButtons) {
-            const processBtn = legacyButtons.querySelector('.process-detail-btn');
-            if (processBtn) toolbar.appendChild(processBtn);
-            mcpSection.replaceChild(toolbar, legacyButtons);
-        } else {
-            mcpSection.appendChild(toolbar);
-        }
+        mcpSection.appendChild(toolbar);
     }
 
     let toolList = mcpSection.querySelector('.mcp-tool-list');
@@ -3159,11 +3165,6 @@ function ensureMcpCallSectionChrome(messageElement, messageId) {
         } else {
             toolbar.after(toolList);
         }
-    }
-
-    if (legacyButtons && legacyButtons.parentNode === mcpSection) {
-        legacyButtons.querySelectorAll('.mcp-detail-btn[data-exec-id]').forEach((btn) => toolList.appendChild(btn));
-        legacyButtons.remove();
     }
 
     const clientId = messageId || messageElement.id;
@@ -3310,7 +3311,7 @@ function toggleMcpToolList(assistantMessageId) {
     if (
         !getPendingMcpExecutionCount(messageEl) &&
         !getPendingToolExecutionSummaryCount(messageEl) &&
-        !toolList.querySelector('.mcp-detail-btn[data-exec-id], .mcp-detail-btn[data-tool-summary]')
+        !toolList.querySelector('.mcp-detail-btn')
     ) {
         if (typeof toggleProcessDetails === 'function') {
             toggleProcessDetails(null, assistantMessageId);
@@ -3319,7 +3320,7 @@ function toggleMcpToolList(assistantMessageId) {
     }
     const willExpand = !toolList.classList.contains('expanded');
     if (willExpand) {
-        ensureMcpCallButtons(messageEl);
+        renderPendingMcpCallButtons(messageEl);
         toolList.classList.add('expanded');
     } else {
         toolList.classList.remove('expanded');
@@ -3336,85 +3337,78 @@ window.setMcpExecutionSummaryCount = setMcpExecutionSummaryCount;
 window.setPendingMcpExecutionIds = setPendingMcpExecutionIds;
 window.setPendingToolExecutionSummaries = setPendingToolExecutionSummaries;
 
-/** 将 MCP 工具按钮挂到独立工具列表，并批量解析工具名 */
-function appendMcpCallButtons(messageElement, executionIds) {
-    if (!messageElement || !Array.isArray(executionIds) || executionIds.length === 0) {
-        return;
-    }
+/**
+ * 声明式渲染工具调用列表。
+ * 过程摘要是展示与定位的唯一模型；executionIds 仅在摘要尚未到达时提供占位。
+ * 每次更新整体替换列表，避免增量追加产生双重状态。
+ */
+function renderMcpCallButtons(messageElement) {
+    if (!messageElement) return;
     const chrome = ensureMcpCallSectionChrome(messageElement, messageElement.id);
     if (!chrome) return;
     const toolList = chrome.toolList;
+    const executionIds = getCachedMcpExecutionIds(messageElement);
+    const summaries = getCachedToolExecutionSummaries(messageElement);
+    const items = summaries.length > 0
+        ? summaries
+        : executionIds.map((executionId) => normalizeToolExecutionSummaryForButton({ executionId }));
 
-    executionIds.forEach((execId, index) => {
-        if (toolList.querySelector('.mcp-detail-btn[data-exec-id="' + CSS.escape(String(execId)) + '"]')) {
-            return;
-        }
-        const detailBtn = document.createElement('button');
-        detailBtn.className = 'mcp-detail-btn';
-        detailBtn.dataset.execId = execId;
-        detailBtn.dataset.execIndex = String(index + 1);
-        detailBtn.innerHTML = '<span>' + (typeof window.t === 'function' ? window.t('chat.callNumber', { n: index + 1 }) : '调用 #' + (index + 1)) + '</span>';
-        detailBtn.onclick = async () => {
-            const summary = await resolveToolExecutionSummaryForFocus(messageElement, execId, index);
-            if (summary && (summary.processDetailId || summary.toolCallId)) {
-                await focusToolExecutionInProcessDetails(messageElement, summary, index);
-                return;
-            }
-            showMCPDetail(execId);
-        };
-        toolList.appendChild(detailBtn);
-    });
-    batchUpdateButtonToolNames(toolList, executionIds);
-    syncMcpToolsToggleButton(messageElement);
-}
-
-function appendMcpCallSummaryButtons(messageElement, summaries) {
-    if (!messageElement || !Array.isArray(summaries) || summaries.length === 0) {
-        return;
-    }
-    const chrome = ensureMcpCallSectionChrome(messageElement, messageElement.id);
-    if (!chrome) return;
-    const toolList = chrome.toolList;
-    summaries.forEach((raw, index) => {
-        const item = normalizeToolExecutionSummaryForButton(raw);
-        const key = item.executionId || item.toolCallId || `${item.toolName || 'tool'}-${index + 1}`;
-        const selector = '.mcp-detail-btn[data-tool-summary="' + CSS.escape(String(key)) + '"]';
-        const existingSummaryBtn = toolList.querySelector(selector);
-        const existingExecBtn = item.executionId
-            ? toolList.querySelector('.mcp-detail-btn[data-exec-id="' + CSS.escape(String(item.executionId)) + '"]')
-            : null;
-        if (existingSummaryBtn) {
-            return;
-        }
-        // 历史会话可能先按 executionId 渲染旧按钮，随后摘要才异步到达。
-        // 复用并升级该按钮，避免它永久保留“只看执行详情、不定位上下文”的旧处理器。
-        const btn = existingExecBtn || document.createElement('button');
+    const renderVersion = String((parseInt(toolList.dataset.renderVersion, 10) || 0) + 1);
+    toolList.dataset.renderVersion = renderVersion;
+    const fragment = document.createDocumentFragment();
+    items.forEach((item, index) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
         btn.className = 'mcp-detail-btn';
-        btn.dataset.toolSummary = key;
+        btn.dataset.execIndex = String(index + 1);
         if (item.executionId) {
             btn.dataset.execId = item.executionId;
         }
-        if (item.processDetailId || item.toolCallId) {
-            btn.onclick = async () => {
-                await focusToolExecutionInProcessDetails(messageElement, item, index);
-            };
-        } else if (item.executionId) {
-            btn.onclick = () => showMCPDetail(item.executionId);
+        if (item.toolCallId) {
+            btn.dataset.toolCallId = item.toolCallId;
+        }
+        btn.onclick = async () => {
+            let focusItem = item;
+            if (!focusItem.processDetailId && !focusItem.toolCallId && focusItem.executionId) {
+                focusItem = await resolveToolExecutionSummaryForFocus(
+                    messageElement,
+                    focusItem.executionId,
+                    index
+                ) || focusItem;
+            }
+            await focusToolExecutionInProcessDetails(messageElement, focusItem, index);
+        };
+        if (item.toolName) {
+            renderToolExecutionButtonContent(btn, item.toolName, String(index + 1), item.status);
         } else {
-            btn.onclick = async () => {
-                await focusToolExecutionInProcessDetails(messageElement, item, index);
-            };
+            btn.innerHTML = '<span>' + (typeof window.t === 'function'
+                ? window.t('chat.callNumber', { n: index + 1 })
+                : '调用 #' + (index + 1)) + '</span>';
         }
-        renderToolExecutionButtonContent(btn, item.toolName || (typeof window.t === 'function' ? window.t('chat.unknownTool') : '未知工具'), String(index + 1), item.status);
-        if (!existingExecBtn) {
-            toolList.appendChild(btn);
-        }
+        fragment.appendChild(btn);
     });
+    toolList.replaceChildren(fragment);
+
+    if (summaries.length === 0 && executionIds.length > 0) {
+        batchUpdateButtonToolNames(toolList, executionIds, renderVersion);
+    }
     syncMcpToolsToggleButton(messageElement);
 }
 
-/** 历史会话懒加载：用户展开工具列表时再渲染工具按钮 */
-function ensureMcpCallButtons(messageElement) {
+function setMcpCallExecutionIds(messageElement, executionIds) {
+    if (!messageElement || !Array.isArray(executionIds)) return;
+    cacheMcpExecutionIds(messageElement, executionIds);
+    renderMcpCallButtons(messageElement);
+}
+
+function setMcpCallSummaries(messageElement, summaries) {
+    if (!messageElement || !Array.isArray(summaries)) return;
+    cacheToolExecutionSummaries(messageElement, summaries);
+    renderMcpCallButtons(messageElement);
+}
+
+/** 懒加载：用户展开工具列表时提交待渲染的数据模型。 */
+function renderPendingMcpCallButtons(messageElement) {
     if (!messageElement || !messageElement.dataset) {
         return;
     }
@@ -3428,7 +3422,7 @@ function ensureMcpCallButtons(messageElement) {
             summaries = [];
         }
         if (Array.isArray(summaries) && summaries.length > 0) {
-            appendMcpCallSummaryButtons(messageElement, summaries);
+            setMcpCallSummaries(messageElement, summaries);
             renderedSummaryExecutions = true;
         }
         delete messageElement.dataset.pendingToolExecutionSummaries;
@@ -3446,15 +3440,13 @@ function ensureMcpCallButtons(messageElement) {
             executionIds = [];
         }
         if (Array.isArray(executionIds) && executionIds.length > 0) {
-            appendMcpCallButtons(messageElement, executionIds);
+            setMcpCallExecutionIds(messageElement, executionIds);
         }
         delete messageElement.dataset.pendingMcpExecutionIds;
     }
 }
 
-window.ensureMcpCallButtons = ensureMcpCallButtons;
-window.appendMcpCallButtons = appendMcpCallButtons;
-window.appendMcpCallSummaryButtons = appendMcpCallSummaryButtons;
+window.setMcpCallExecutionIds = setMcpCallExecutionIds;
 
 function normalizeToolExecutionSummary(raw) {
     if (typeof raw === 'string') {
@@ -3514,7 +3506,7 @@ function renderToolExecutionButtonContent(btn, displayToolName, index, status) {
 }
 
 // 批量获取工具摘要并更新按钮（消除 N 次单独 API 请求，合并为 1 次）
-async function batchUpdateButtonToolNames(buttonsContainer, executionIds) {
+async function batchUpdateButtonToolNames(buttonsContainer, executionIds, renderVersion) {
     if (!executionIds || executionIds.length === 0) return;
     try {
         const response = await apiFetch('/api/monitor/executions/names', {
@@ -3524,6 +3516,8 @@ async function batchUpdateButtonToolNames(buttonsContainer, executionIds) {
         });
         if (!response.ok) return;
         const nameMap = await response.json(); // { execId: toolName } 或 { execId: { toolName, status } }
+        // 等待请求期间如果摘要触发了新一轮渲染，旧响应不得覆盖新状态。
+        if (renderVersion && buttonsContainer.dataset.renderVersion !== renderVersion) return;
         // 更新对应按钮的文本
         const buttons = buttonsContainer.querySelectorAll('.mcp-detail-btn[data-exec-id]');
         buttons.forEach(btn => {

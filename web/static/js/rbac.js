@@ -16,8 +16,9 @@ let rbacState = {
     resourceSearchTimer: null,
     resourceRequestSeq: 0,
     resourcePage: 0,
-    resourcePageSize: 12,
+    resourcePageSize: 8,
     resourceHasMore: false,
+    resourceTotal: 0,
     assignmentSearch: '',
     assignmentType: 'all',
     assignmentPage: 0,
@@ -26,6 +27,11 @@ let rbacState = {
     showEffectivePermissions: false,
     auditLogs: [],
     auditLoading: false,
+    auditPage: 0,
+    auditPageSize: 20,
+    auditTotal: 0,
+    auditAction: '',
+    auditResourceType: '',
     pendingRoleUserId: '',
     pendingUserRoles: new Set(),
     editingRoleIsSystem: false,
@@ -39,6 +45,7 @@ const rbacScopeMeta = {
 };
 
 const rbacResourceLabels = {
+    user: '平台用户',
     project: '项目', conversation: '对话', vulnerability: '漏洞', webshell: 'WebShell 连接',
     batch_task: '批量任务', c2_listener: 'C2 监听器',
 };
@@ -202,10 +209,25 @@ function renderRbacPendingSelection() {
         <div class="rbac-pending-item">
             <div class="rbac-pending-item-main">
                 <strong>${rbacEscape(item.meta.label || item.id)}</strong>
-                <small title="${rbacEscape(item.id)}">${rbacEscape(rbacShortId(item.id))}</small>
+                ${(item.meta.label || item.id) === item.id ? '' : `<small title="${rbacEscape(item.id)}">${rbacEscape(rbacShortId(item.id))}</small>`}
             </div>
-            ${item.manual ? '' : `<button type="button" class="btn-link btn-small" onclick="toggleRbacResourceSelection('${rbacEscape(item.id)}', false)">${rbacEscape(rbacT('rbac.removePending', '移除'))}</button>`}
+            <button type="button" class="rbac-pending-remove" data-resource-id="${rbacEscape(item.id)}" data-manual="${item.manual ? 'true' : 'false'}" onclick="removeRbacPendingItem(this)" title="${rbacEscape(rbacT('rbac.removePending', '移除'))}" aria-label="${rbacEscape(rbacT('rbac.removePending', '移除'))}">×</button>
         </div>`).join('');
+}
+
+function removeRbacPendingItem(button) {
+    const resourceId = button?.dataset?.resourceId || '';
+    if (!resourceId) return;
+    if (button.dataset.manual === 'true') removeRbacManualPending(resourceId);
+    else toggleRbacResourceSelection(resourceId, false);
+}
+
+function removeRbacManualPending(resourceId) {
+    const input = document.getElementById('rbac-assignment-id');
+    if (!input) return;
+    const ids = input.value.split(/[\s,，;；]+/).map(id => id.trim()).filter(Boolean);
+    input.value = ids.filter(id => id !== resourceId).join(', ');
+    syncRbacAssignmentSubmit();
 }
 
 function rbacNotify(message, type = 'info') {
@@ -443,6 +465,29 @@ async function loadPlatformRbac() {
         rbacState.selectedUserId = rbacState.users[0] ? rbacState.users[0].id : '';
     }
     renderRbac();
+    if (rbacState.mainView === 'users' && rbacState.activeTab === 'assignments') {
+        rbacState.resourcePage = 0;
+        await loadRbacResourceOptions();
+    }
+}
+
+async function refreshPlatformRbac(button) {
+    const originalText = button ? button.textContent : '';
+    if (button) {
+        button.disabled = true;
+        button.textContent = rbacT('common.loading', '刷新中…');
+    }
+    try {
+        await loadPlatformRbac();
+        initRbacSelects();
+    } catch (error) {
+        rbacNotify(`${rbacT('rbac.errors.loadFailed', '刷新失败')}: ${error.message || error}`, 'error');
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.textContent = originalText || rbacT('common.refresh', '刷新');
+        }
+    }
 }
 
 function selectedRbacUser() {
@@ -491,15 +536,15 @@ function renderRbacOverview() {
     if (context) {
         if (!user) {
             context.hidden = true;
-            context.textContent = '';
+            context.innerHTML = '';
         } else {
             const access = resolveUserEffectiveAccess(user);
             context.hidden = false;
-            context.textContent = rbacT('rbac.metricUserContext', '当前成员：{{name}} · {{roles}} 个角色 · {{grants}} 项授权', {
-                name: rbacUserDisplayName(user),
-                roles: access.userRoles.length,
-                grants: access.assignmentCount,
-            });
+            context.innerHTML = `
+                <span class="rbac-context-label">${rbacEscape(rbacT('rbac.currentMemberLabel', '当前成员'))}</span>
+                <strong class="rbac-context-member" title="${rbacEscape(rbacUserDisplayName(user))}">${rbacEscape(rbacUserDisplayName(user))}</strong>
+                <span class="rbac-context-stat"><b>${access.userRoles.length}</b>${rbacEscape(rbacT('rbac.metricRolesPill', '个角色'))}</span>
+                <span class="rbac-context-stat"><b>${access.assignmentCount}</b>${rbacEscape(rbacT('rbac.metricAssignmentsPill', '项授权'))}</span>`;
         }
     }
 }
@@ -551,9 +596,11 @@ function selectRbacUser(userId) {
     rbacState.selectedResourceMeta.clear();
     rbacState.resourcePage = 0;
     rbacState.assignmentPage = 0;
+    rbacState.auditPage = 0;
     rbacState.showEffectivePermissions = false;
     renderRbac();
     if (rbacState.activeTab === 'assignments') loadRbacResourceOptions();
+    if (rbacState.activeTab === 'audit') loadRbacUserAuditLogs();
 }
 
 function setRbacRoleSearch(value) {
@@ -622,7 +669,7 @@ function renderRbacRoles() {
             const status = user.enabled ? rbacT('rbac.statusEnabled', '启用') : rbacT('rbac.statusDisabled', '停用');
             const displayName = rbacUserDisplayName(user);
             const handle = user.username === displayName ? '' : `@${user.username} · `;
-            title.innerHTML = `<span class="rbac-detail-name">${rbacEscape(displayName)}</span><span class="rbac-detail-meta">${rbacEscape(handle)}${rbacEscape(status)}</span>`;
+            title.innerHTML = `<span class="rbac-detail-name" title="${rbacEscape(displayName)}">${rbacEscape(displayName)}</span><span class="rbac-detail-meta" title="${rbacEscape(`${handle}${status}`)}">${rbacEscape(handle)}${rbacEscape(status)}</span>`;
         } else {
             title.textContent = rbacT('rbac.selectUser', '选择用户');
         }
@@ -771,7 +818,10 @@ function switchRbacTab(tab) {
     if (assignments) assignments.hidden = tab !== 'assignments';
     if (audit) audit.hidden = tab !== 'audit';
     if (tab === 'assignments') loadRbacResourceOptions();
-    if (tab === 'audit') loadRbacUserAuditLogs();
+    if (tab === 'audit') {
+        rbacState.auditPage = 0;
+        loadRbacUserAuditLogs();
+    }
     initRbacSelects();
 }
 
@@ -840,18 +890,16 @@ function renderRbacAssignments() {
         const detail = rbacFormatResourceDetail(type, row.resourceDetail || row.resource_detail || '');
         return `
             <div class="rbac-assignment-row">
-                <span class="rbac-assignment-resource">
+                <span class="rbac-assignment-identity">
                     <span class="rbac-pill is-info">${rbacEscape(rbacResourceLabel(type))}</span>
-                    <span class="rbac-assignment-resource-main">
-                        <strong>${rbacEscape(label)}</strong>
-                        <span class="rbac-assignment-resource-meta">
-                            <code title="${rbacEscape(id)}">${rbacEscape(rbacShortId(id))}</code>
-                            ${detail ? `<span>${rbacEscape(detail)}</span>` : ''}
-                            <button type="button" class="btn-link btn-small" onclick="rbacCopyResourceId('${rbacEscape(id)}')">${rbacEscape(rbacT('rbac.copyId', '复制 ID'))}</button>
-                        </span>
-                    </span>
+                    <strong title="${rbacEscape(label)}">${rbacEscape(label)}</strong>
                 </span>
-                <button type="button" class="btn-secondary btn-small" onclick="deleteRbacAssignment('${rbacEscape(row.id)}')">${rbacT('rbac.revoke', '撤销')}</button>
+                <span class="rbac-assignment-id" title="${rbacEscape(id)}">${rbacEscape(rbacShortId(id))}</span>
+                <span class="rbac-assignment-detail">${detail ? rbacEscape(detail) : '—'}</span>
+                <span class="rbac-assignment-actions">
+                    <button type="button" class="btn-link btn-small" onclick="rbacCopyResourceId('${rbacEscape(id)}')">${rbacEscape(rbacT('rbac.copyId', '复制 ID'))}</button>
+                    <button type="button" class="btn-link btn-small is-danger" onclick="deleteRbacAssignment('${rbacEscape(row.id)}')">${rbacT('rbac.revoke', '撤销')}</button>
+                </span>
             </div>`;
     }).join('');
     renderRbacAssignmentPagination(filteredRows.length, totalPages);
@@ -862,6 +910,7 @@ function renderRbacAssignmentPagination(total, totalPages) {
     const pagination = document.getElementById('rbac-assignment-pagination');
     if (!pagination) return;
     const pages = Math.max(1, totalPages || 1);
+    pagination.hidden = pages <= 1;
     rbacState.assignmentPage = Math.min(rbacState.assignmentPage, pages - 1);
     const info = pagination.querySelector('[data-rbac-page-info]');
     const previous = pagination.querySelector('[data-rbac-page-previous]');
@@ -940,10 +989,12 @@ async function loadRbacResourceOptions() {
         if (requestSeq !== rbacState.resourceRequestSeq) return;
         rbacState.resourceOptions = result.resources || [];
         rbacState.resourceHasMore = !!result.has_more;
+        rbacState.resourceTotal = Number(result.total || 0);
         renderRbacResourcePicker();
     } catch (error) {
         if (requestSeq !== rbacState.resourceRequestSeq) return;
         rbacState.resourceHasMore = false;
+        rbacState.resourceTotal = 0;
         picker.innerHTML = `<div class="rbac-picker-status is-error">${rbacEscape(error.message || rbacT('rbac.errors.loadResourcesFailed', '加载资源失败'))} <button type="button" class="btn-link" onclick="loadRbacResourceOptions()">${rbacT('rbac.retry', '重试')}</button></div>`;
         syncRbacResourcePagination(false);
     }
@@ -969,14 +1020,12 @@ function renderRbacResourcePicker() {
         return `<label class="rbac-resource-option${alreadyAssigned ? ' is-assigned' : ''}">
             <input type="checkbox" class="modern-checkbox" value="${rbacEscape(resource.id)}" ${checked ? 'checked' : ''} ${alreadyAssigned ? 'disabled' : ''} onchange="toggleRbacResourceSelection(this.value, this.checked)">
             <span class="checkbox-custom"></span>
-            <span class="rbac-resource-option-main">
-                <strong title="${rbacEscape(resource.label || resource.id)}">${rbacEscape(resource.label || resource.id)}</strong>
-                <small>
-                    <code title="${rbacEscape(resource.id)}">${rbacEscape(rbacShortId(resource.id))}</code>
-                    <button type="button" class="btn-link btn-small" onclick="event.preventDefault(); rbacCopyResourceId('${rbacEscape(resource.id)}')">${rbacEscape(rbacT('rbac.copyId', '复制 ID'))}</button>
-                </small>
+            <span class="rbac-resource-option-main" title="${rbacEscape(resource.label || resource.id)}">
+                <strong>${rbacEscape(resource.label || resource.id)}</strong>
             </span>
-            <span class="rbac-resource-option-detail">${alreadyAssigned ? rbacT('rbac.alreadyAssigned', '已授权') : rbacEscape(detail)}</span>
+            <span class="rbac-resource-option-id" title="${rbacEscape(resource.id)}">${rbacEscape(rbacShortId(resource.id))}</span>
+            <span class="rbac-resource-option-detail">${alreadyAssigned ? rbacT('rbac.alreadyAssigned', '已授权') : (rbacEscape(detail) || '—')}</span>
+            <button type="button" class="btn-link btn-small rbac-resource-copy" onclick="event.preventDefault(); event.stopPropagation(); rbacCopyResourceId('${rbacEscape(resource.id)}')">${rbacEscape(rbacT('rbac.copyId', '复制 ID'))}</button>
         </label>`;
     }).join('');
     syncRbacResourcePagination(false);
@@ -988,9 +1037,17 @@ function syncRbacResourcePagination(loading) {
     const previous = pagination.querySelector('[data-rbac-page-previous]');
     const next = pagination.querySelector('[data-rbac-page-next]');
     const info = pagination.querySelector('[data-rbac-page-info]');
+    pagination.hidden = !loading && rbacState.resourcePage === 0 && !rbacState.resourceHasMore;
     if (previous) previous.disabled = loading || rbacState.resourcePage === 0;
     if (next) next.disabled = loading || !rbacState.resourceHasMore;
-    if (info) info.textContent = rbacT('rbac.pagination.resourcePage', '第 {{page}} 页', { page: rbacState.resourcePage + 1 });
+    if (info) {
+        const pages = Math.max(1, Math.ceil(rbacState.resourceTotal / rbacState.resourcePageSize));
+        info.textContent = rbacT('rbac.pagination.pageSummary', '第 {{page}} / {{pages}} 页 · 共 {{total}} 项', {
+            page: rbacState.resourcePage + 1,
+            pages,
+            total: rbacState.resourceTotal,
+        });
+    }
 }
 
 function changeRbacResourcePage(delta) {
@@ -1030,6 +1087,9 @@ async function loadRbacUserAuditLogs() {
     if (!box) return;
     if (!user) {
         box.innerHTML = `<div class="rbac-empty"><strong>${rbacT('rbac.empty.selectUserFirst', '请先选择用户')}</strong></div>`;
+        rbacState.auditPage = 0;
+        rbacState.auditTotal = 0;
+        renderRbacAuditPagination();
         return;
     }
     rbacState.auditLoading = true;
@@ -1037,25 +1097,94 @@ async function loadRbacUserAuditLogs() {
     try {
         const params = new URLSearchParams({
             category: 'rbac',
-            q: user.id,
-            page: '1',
-            page_size: '20',
+            related_user_id: user.id,
+            page: String(rbacState.auditPage + 1),
+            page_size: String(rbacState.auditPageSize),
         });
+        if (rbacState.auditAction) params.set('action', rbacState.auditAction);
+        if (rbacState.auditResourceType) params.set('resource_type', rbacState.auditResourceType);
         const res = await apiFetch(`/api/audit/logs?${params.toString()}`);
         const result = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(result.error || rbacT('rbac.errors.loadAuditFailed', '加载审计记录失败'));
-        rbacState.auditLogs = (result.logs || []).filter(log => {
-            const resourceId = log.resourceId || log.resource_id || '';
-            const detail = log.detail || {};
-            const detailUserId = detail.user_id || detail.userId || '';
-            return resourceId === user.id || detailUserId === user.id || String(log.message || '').includes(user.username || '');
-        });
+        rbacState.auditLogs = result.logs || [];
+        rbacState.auditTotal = Number(result.total || 0);
         renderRbacAuditLogs();
+        renderRbacAuditPagination();
     } catch (error) {
         box.innerHTML = `<div class="rbac-picker-status is-error">${rbacEscape(error.message || rbacT('rbac.errors.loadAuditFailed', '加载审计记录失败'))} <button type="button" class="btn-link" onclick="loadRbacUserAuditLogs()">${rbacT('rbac.retry', '重试')}</button></div>`;
+        renderRbacAuditPagination();
     } finally {
         rbacState.auditLoading = false;
     }
+}
+
+function renderRbacAuditPagination() {
+    const pagination = document.getElementById('rbac-audit-pagination');
+    if (!pagination) return;
+    const pages = Math.max(1, Math.ceil(rbacState.auditTotal / rbacState.auditPageSize));
+    rbacState.auditPage = Math.min(rbacState.auditPage, pages - 1);
+    pagination.hidden = false;
+    const first = pagination.querySelector('[data-rbac-page-first]');
+    const previous = pagination.querySelector('[data-rbac-page-previous]');
+    const next = pagination.querySelector('[data-rbac-page-next]');
+    const last = pagination.querySelector('[data-rbac-page-last]');
+    const info = pagination.querySelector('[data-rbac-page-info]');
+    const range = pagination.querySelector('[data-rbac-page-range]');
+    const atFirst = rbacState.auditPage === 0;
+    const atLast = rbacState.auditPage >= pages - 1;
+    if (first) first.disabled = atFirst;
+    if (previous) previous.disabled = atFirst;
+    if (next) next.disabled = atLast;
+    if (last) last.disabled = atLast;
+    if (info) info.textContent = rbacT('rbac.pagination.pageIndicator', '第 {{page}} / {{pages}} 页', {
+        page: rbacState.auditPage + 1,
+        pages,
+    });
+    const start = rbacState.auditTotal === 0 ? 0 : rbacState.auditPage * rbacState.auditPageSize + 1;
+    const end = Math.min(rbacState.auditTotal, (rbacState.auditPage + 1) * rbacState.auditPageSize);
+    if (range) range.textContent = rbacT('rbac.pagination.recordRange', '显示 {{start}}-{{end}} / 共 {{total}} 条记录', {
+        start,
+        end,
+        total: rbacState.auditTotal,
+    });
+}
+
+function changeRbacAuditPage(delta) {
+    const pages = Math.max(1, Math.ceil(rbacState.auditTotal / rbacState.auditPageSize));
+    const nextPage = rbacState.auditPage + delta;
+    if (nextPage < 0 || nextPage >= pages || rbacState.auditLoading) return;
+    rbacState.auditPage = nextPage;
+    loadRbacUserAuditLogs();
+}
+
+function setRbacAuditPage(page) {
+    if (rbacState.auditLoading) return;
+    const pages = Math.max(1, Math.ceil(rbacState.auditTotal / rbacState.auditPageSize));
+    const nextPage = page < 0 ? pages - 1 : Math.max(0, Math.min(Number(page) || 0, pages - 1));
+    if (nextPage === rbacState.auditPage) return;
+    rbacState.auditPage = nextPage;
+    loadRbacUserAuditLogs();
+}
+
+function refreshRbacUserAuditLogs() {
+    rbacState.auditPage = 0;
+    loadRbacUserAuditLogs();
+}
+
+function changeRbacAuditPageSize(value) {
+    const pageSize = Number(value);
+    if (![20, 50, 100].includes(pageSize)) return;
+    rbacState.auditPageSize = pageSize;
+    rbacState.auditPage = 0;
+    loadRbacUserAuditLogs();
+}
+
+function setRbacAuditFilter(filter, value) {
+    if (filter === 'action') rbacState.auditAction = String(value || '').trim();
+    else if (filter === 'resourceType') rbacState.auditResourceType = String(value || '').trim();
+    else return;
+    rbacState.auditPage = 0;
+    loadRbacUserAuditLogs();
 }
 
 function renderRbacAuditLogs() {
@@ -1068,14 +1197,32 @@ function renderRbacAuditLogs() {
     const formatTime = typeof formatAuditTime === 'function'
         ? formatAuditTime
         : (iso) => rbacText(iso);
-    box.innerHTML = rbacState.auditLogs.map(log => `
-        <article class="rbac-audit-row">
-            <strong class="rbac-audit-action">${rbacEscape(rbacAuditActionLabel(log))}</strong>
-            <span class="rbac-pill rbac-audit-actor">${rbacEscape(log.actor || rbacT('rbac.unknownActor', '未知操作者'))}</span>
-            ${log.resourceType || log.resource_type ? `<span class="rbac-audit-detail">${rbacEscape(rbacResourceLabel(log.resourceType || log.resource_type))}</span>` : ''}
-            ${log.resourceId || log.resource_id ? `<code class="rbac-audit-detail" title="${rbacEscape(log.resourceId || log.resource_id)}">${rbacEscape(rbacShortId(log.resourceId || log.resource_id))}</code>` : ''}
-            <span class="rbac-audit-time">${rbacEscape(formatTime(log.createdAt || log.created_at))}</span>
-        </article>`).join('');
+    const header = `
+        <div class="rbac-audit-table-head" role="row">
+            <span role="columnheader">${rbacEscape(rbacT('rbac.auditColumns.action', '操作'))}</span>
+            <span role="columnheader">${rbacEscape(rbacT('rbac.auditColumns.actor', '操作人'))}</span>
+            <span role="columnheader">${rbacEscape(rbacT('rbac.auditColumns.resourceType', '资源类型'))}</span>
+            <span role="columnheader">${rbacEscape(rbacT('rbac.auditColumns.resourceId', '资源 ID'))}</span>
+            <span role="columnheader">${rbacEscape(rbacT('rbac.auditColumns.time', '操作时间'))}</span>
+        </div>`;
+    const rows = rbacState.auditLogs.map(log => {
+        const resourceType = log.resourceType || log.resource_type;
+        const resourceId = log.resourceId || log.resource_id;
+        return `
+        <article class="rbac-audit-row" role="row">
+            <strong class="rbac-audit-action" role="cell" data-label="${rbacEscape(rbacT('rbac.auditColumns.action', '操作'))}"><span class="rbac-audit-cell-value">${rbacEscape(rbacAuditActionLabel(log))}</span></strong>
+            <span class="rbac-audit-actor" role="cell" data-label="${rbacEscape(rbacT('rbac.auditColumns.actor', '操作人'))}"><span class="rbac-pill rbac-audit-cell-value">${rbacEscape(log.actor || rbacT('rbac.unknownActor', '未知操作者'))}</span></span>
+            <span class="rbac-audit-detail" role="cell" data-label="${rbacEscape(rbacT('rbac.auditColumns.resourceType', '资源类型'))}"><span class="rbac-audit-cell-value">${resourceType ? rbacEscape(rbacResourceLabel(resourceType)) : '—'}</span></span>
+            <span class="rbac-audit-detail rbac-audit-resource-id" role="cell" data-label="${rbacEscape(rbacT('rbac.auditColumns.resourceId', '资源 ID'))}"><span class="rbac-audit-cell-value">${resourceId ? rbacEscape(resourceId) : '—'}</span></span>
+            <span class="rbac-audit-time" role="cell" data-label="${rbacEscape(rbacT('rbac.auditColumns.time', '操作时间'))}"><span class="rbac-audit-cell-value">${rbacEscape(formatTime(log.createdAt || log.created_at))}</span></span>
+        </article>`;
+    }).join('');
+    box.removeAttribute('role');
+    box.innerHTML = `
+        <div class="rbac-audit-table" role="table">
+            ${header}
+            <div class="rbac-audit-table-body" role="rowgroup">${rows}</div>
+        </div>`;
 }
 
 function openRbacUserModal(userId = '') {
@@ -1327,7 +1474,7 @@ async function createRbacAssignment() {
         const res = await apiFetch('/api/rbac/resource-assignments', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user_id: user.id, resource_type: resourceType, resource_ids: resourceIds }),
+            body: JSON.stringify({ user_id: user.id, resource_type: resourceType, resource_ids: resourceIds, auto_detect: true }),
         });
         const result = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(result.error || rbacT('rbac.errors.batchGrantFailed', '批量授权失败'));
@@ -1379,9 +1526,15 @@ window.openRbacRolesFromUserModal = openRbacRolesFromUserModal;
 window.focusRbacRoleAssignment = focusRbacRoleAssignment;
 window.toggleRbacEffectivePermissions = toggleRbacEffectivePermissions;
 window.loadRbacUserAuditLogs = loadRbacUserAuditLogs;
+window.refreshRbacUserAuditLogs = refreshRbacUserAuditLogs;
+window.changeRbacAuditPage = changeRbacAuditPage;
+window.setRbacAuditPage = setRbacAuditPage;
+window.changeRbacAuditPageSize = changeRbacAuditPageSize;
+window.setRbacAuditFilter = setRbacAuditFilter;
 window.clearRbacResourceSelection = clearRbacResourceSelection;
 window.rbacCopyResourceId = rbacCopyResourceId;
 window.initPlatformRbacPage = initPlatformRbacPage;
+window.refreshPlatformRbac = refreshPlatformRbac;
 window.initRbacSelects = initRbacSelects;
 window.loadPlatformRbac = loadPlatformRbac;
 window.selectRbacUser = selectRbacUser;

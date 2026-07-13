@@ -168,10 +168,8 @@ function renderSkillsList() {
             ? _t('skills.cardFiles', { count: skill.file_count })
             : '';
         const metaItems = [ver, fc, sc].filter(Boolean);
-        const initial = (skill.name || sid || 'S').trim().charAt(0).toUpperCase();
         return `
             <div class="skill-card">
-                <div class="skill-card-mark" aria-hidden="true">${escapeHtml(initial)}</div>
                 <div class="skill-card-body">
                     <div class="skill-card-header">
                         <div class="skill-card-title-row">
