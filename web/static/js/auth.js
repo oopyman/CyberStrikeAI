@@ -711,6 +711,9 @@ async function openRobotAccountBinding() {
 
 function closeRobotAccountBinding() {
     closeAppModal('robot-account-binding-modal');
+	if (typeof window.loadVulnerabilityAlertSubscription === 'function') {
+		window.loadVulnerabilityAlertSubscription();
+	}
 }
 
 async function generateRobotBindingCode() {
@@ -859,6 +862,9 @@ async function loadRobotAccountBindings() {
             </div>
             <button type="button" class="btn-secondary btn-small robot-binding-unbind-btn" onclick="deleteRobotAccountBinding('${escapeHtml(binding.id || '')}')">解除绑定</button>
         </div>`).join('');
+	if (typeof window.loadVulnerabilityAlertSubscription === 'function') {
+		window.loadVulnerabilityAlertSubscription();
+	}
 }
 
 function formatRobotBindingTime(value) {

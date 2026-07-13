@@ -490,6 +490,234 @@ html[data-theme="dark"] .main-sidebar {
     align-items: center;
 }
 
+.vulnerability-alert-settings {
+    margin: 24px 0 4px;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: var(--bg-primary);
+    box-shadow: 0 3px 12px rgba(15, 23, 42, 0.035);
+}
+
+.vulnerability-alert-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    padding: 17px 20px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.vulnerability-alert-copy {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 12px;
+}
+
+.vulnerability-alert-copy > div {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.vulnerability-alert-copy strong {
+    display: block;
+    color: var(--text-primary);
+    font-size: 0.9375rem;
+    font-weight: 650;
+    line-height: 1.4;
+}
+
+.vulnerability-alert-copy > div > span {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    line-height: 1.45;
+}
+
+.vulnerability-alert-icon {
+    display: flex;
+    width: 34px;
+    height: 34px;
+    flex: 0 0 34px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9px;
+    background: rgba(0, 102, 255, 0.09);
+    color: var(--accent-color);
+}
+
+.vulnerability-alert-controls {
+    display: flex;
+    min-height: 58px;
+    align-items: center;
+    gap: 22px;
+    padding: 10px 20px;
+    border-radius: 0 0 10px 10px;
+    background: var(--bg-secondary);
+}
+
+.vulnerability-alert-binding-row {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 7px 10px;
+    padding-left: 22px;
+    border-left: 1px solid var(--border-color);
+}
+
+.vulnerability-alert-binding-row > span {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    line-height: 1.45;
+}
+
+.vulnerability-alert-binding-row > span.is-warning {
+    color: #b45309;
+}
+
+.vulnerability-alert-bind-button {
+    padding: 2px 0;
+    border: 0;
+    background: transparent;
+    color: var(--accent-color);
+    font: inherit;
+    font-size: 0.75rem;
+    font-weight: 650;
+    line-height: 1.45;
+    cursor: pointer;
+}
+
+.vulnerability-alert-bind-button:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.vulnerability-alert-field {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 10px;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.vulnerability-alert-field .settings-custom-select {
+    width: 148px !important;
+    min-width: 148px !important;
+}
+
+.vulnerability-alert-field .settings-custom-select-trigger {
+    min-height: 36px;
+    padding: 7px 11px;
+    border-radius: 7px;
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.vulnerability-alert-field .settings-custom-select-menu {
+    min-width: 148px;
+}
+
+.vulnerability-alert-switch {
+    position: relative;
+    display: inline-flex;
+    min-height: 36px;
+    align-items: center;
+    gap: 9px;
+    cursor: pointer;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.vulnerability-alert-switch input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.vulnerability-alert-switch-track {
+    position: relative;
+    width: 38px;
+    height: 22px;
+    flex: 0 0 38px;
+    border-radius: 999px;
+    background: #cbd5e1;
+    transition: background-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.vulnerability-alert-switch-track::after {
+    content: '';
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.22);
+    transition: transform 0.16s ease;
+}
+
+.vulnerability-alert-switch input:checked + .vulnerability-alert-switch-track {
+    background: var(--accent-color);
+}
+
+.vulnerability-alert-switch input:checked + .vulnerability-alert-switch-track::after {
+    transform: translateX(16px);
+}
+
+.vulnerability-alert-switch input:focus-visible + .vulnerability-alert-switch-track {
+    box-shadow: 0 0 0 3px rgba(0, 102, 255, 0.16);
+}
+
+.vulnerability-alert-switch input:disabled ~ span {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
+@media (max-width: 760px) {
+    .vulnerability-alert-header {
+        align-items: flex-start;
+    }
+
+    .vulnerability-alert-controls {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 12px;
+        padding: 14px 16px;
+    }
+
+    .vulnerability-alert-binding-row {
+        width: 100%;
+        padding-top: 12px;
+        padding-left: 0;
+        border-top: 1px solid var(--border-color);
+        border-left: 0;
+    }
+}
+
+@media (max-width: 520px) {
+    .vulnerability-alert-settings {
+        margin-top: 20px;
+    }
+
+    .vulnerability-alert-header {
+        padding: 15px 16px;
+    }
+
+    .vulnerability-alert-switch-label {
+        display: none;
+    }
+}
+
 .page-header-actions .btn-danger,
 .page-header-actions .btn-secondary,
 .page-header-actions .btn-primary {

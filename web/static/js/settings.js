@@ -585,6 +585,9 @@ function switchSettingsSection(section) {
         activeContent.classList.add('active');
         initSettingsCustomSelects(activeContent);
     }
+	if (section === 'robots' && typeof window.loadVulnerabilityAlertSubscription === 'function') {
+		window.loadVulnerabilityAlertSubscription();
+	}
     if (section === 'terminal' && typeof initTerminal === 'function') {
         setTimeout(initTerminal, 0);
     }

@@ -2105,6 +2105,16 @@
     "errorGeneric": "Something went wrong. Please try again."
   },
   "vulnerabilityPage": {
+	"alertTitle": "Robot vulnerability alerts",
+	"alertDescription": "Push newly discovered vulnerabilities to robots bound to this account, filtered by severity.",
+	"alertHint": "Send newly discovered vulnerabilities at or above this severity to your bound robot accounts.",
+	"alertConfiguredNotBound": "{{platforms}} is enabled, but this Web account is not bound to a recipient identity.",
+	"alertNoBinding": "No proactive robot is both enabled and bound. Your settings are still saved.",
+	"alertBindAction": "Bind recipient account",
+	"alertMinimum": "Minimum severity",
+	"alertEnabled": "Enable alerts",
+	"alertSaved": "Vulnerability alert settings saved",
+	"alertSaveFailed": "Failed to save vulnerability alert settings",
     "statTotal": "Total",
     "statClickAll": "View all (clear severity filter)",
     "statClickFilter": "Click to filter by this severity; click again to clear",

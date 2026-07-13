@@ -3616,6 +3616,39 @@
                                             </span>
                                         </button>
                                     </div>
+
+									<div class="vulnerability-alert-settings" id="vulnerability-alert-settings">
+										<div class="vulnerability-alert-header">
+											<div class="vulnerability-alert-copy">
+												<span class="vulnerability-alert-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M10 21h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
+												<div>
+													<strong data-i18n="vulnerabilityPage.alertTitle">机器人漏洞提醒</strong>
+													<span data-i18n="vulnerabilityPage.alertDescription">按严重级别将新发现的漏洞推送至当前账号绑定的机器人。</span>
+												</div>
+											</div>
+											<label class="vulnerability-alert-switch">
+												<input type="checkbox" id="vulnerability-alert-enabled" onchange="saveVulnerabilityAlertSubscription()" />
+												<span class="vulnerability-alert-switch-track" aria-hidden="true"></span>
+												<span class="vulnerability-alert-switch-label" data-i18n="vulnerabilityPage.alertEnabled">启用提醒</span>
+											</label>
+										</div>
+										<div class="vulnerability-alert-controls">
+											<label class="vulnerability-alert-field" for="vulnerability-alert-min-severity">
+												<span data-i18n="vulnerabilityPage.alertMinimum">最低级别</span>
+												<select id="vulnerability-alert-min-severity" style="width: 168px; min-width: 168px" onchange="saveVulnerabilityAlertSubscription()">
+													<option value="critical" data-i18n="dashboard.severityCritical">严重</option>
+													<option value="high" data-i18n="dashboard.severityHigh">高危</option>
+													<option value="medium" data-i18n="dashboard.severityMedium">中危</option>
+													<option value="low" data-i18n="dashboard.severityLow">低危</option>
+													<option value="info" data-i18n="dashboard.severityInfo">信息</option>
+												</select>
+											</label>
+											<div class="vulnerability-alert-binding-row">
+												<span id="vulnerability-alert-binding-hint" data-i18n="vulnerabilityPage.alertHint">发现符合级别的新漏洞后，通过已绑定机器人账号推送。</span>
+												<button type="button" class="vulnerability-alert-bind-button" id="vulnerability-alert-bind-button" onclick="openRobotAccountBinding()" hidden data-i18n="vulnerabilityPage.alertBindAction">绑定接收账号</button>
+											</div>
+										</div>
+									</div>
                                 </div>
 
                                 <div id="robot-editor-empty" class="robot-editor-empty">
