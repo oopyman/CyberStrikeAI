@@ -579,3 +579,43 @@ func TestRBACAssignmentLabelsAndWeakTitles(t *testing.T) {
 		t.Fatalf("assignment label = %q, want Alpha Project", rows[0].ResourceLabel)
 	}
 }
+
+func TestDeleteRBACResourceAssignmentWithDetails(t *testing.T) {
+	db := newRBACTestDB(t)
+	user, err := db.CreateRBACUser("revoke-member", "Revoke Member", "hash", true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := db.CreateProject(&Project{Name: "Revoked Project"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.AssignResourcesToUser(user.ID, "project", []string{project.ID}); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := db.ListRBACResourceAssignments(user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("assignments = %#v, want 1", rows)
+	}
+
+	deleted, err := db.DeleteRBACResourceAssignmentWithDetails(rows[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted.ID != rows[0].ID || deleted.UserID != user.ID || deleted.ResourceType != "project" || deleted.ResourceID != project.ID {
+		t.Fatalf("deleted assignment = %#v", deleted)
+	}
+	remaining, err := db.ListRBACResourceAssignments(user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(remaining) != 0 {
+		t.Fatalf("remaining assignments = %#v, want none", remaining)
+	}
+	if _, err := db.DeleteRBACResourceAssignmentWithDetails(rows[0].ID); err == nil {
+		t.Fatal("second delete unexpectedly succeeded")
+	}
+}

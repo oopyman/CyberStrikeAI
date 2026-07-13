@@ -764,6 +764,37 @@ func (db *DB) ListAssignableRBACResourcesPage(resourceType, search string, limit
 	return options, rows.Err()
 }
 
+// CountAssignableRBACResources returns the total rows matching the resource picker filter.
+func (db *DB) CountAssignableRBACResources(resourceType, search string) (int, error) {
+	resourceType = strings.TrimSpace(resourceType)
+	if _, ok := rbacAssignableResourceTables[resourceType]; !ok {
+		return 0, fmt.Errorf("不支持的资源类型: %s", resourceType)
+	}
+	pattern := "%" + strings.ToLower(strings.NewReplacer(
+		`\`, `\\`, `%`, `\%`, `_`, `\_`,
+	).Replace(strings.TrimSpace(search))) + "%"
+	var query string
+	switch resourceType {
+	case "project":
+		query = `SELECT COUNT(*) FROM projects WHERE LOWER(name) LIKE ? ESCAPE '\' OR LOWER(id) LIKE ? ESCAPE '\'`
+	case "conversation":
+		query = `SELECT COUNT(*) FROM conversations WHERE LOWER(COALESCE(NULLIF(TRIM(title), ''), id)) LIKE ? ESCAPE '\' OR LOWER(id) LIKE ? ESCAPE '\'`
+	case "vulnerability":
+		query = `SELECT COUNT(*) FROM vulnerabilities WHERE LOWER(title) LIKE ? ESCAPE '\' OR LOWER(id) LIKE ? ESCAPE '\'`
+	case "webshell":
+		query = `SELECT COUNT(*) FROM webshell_connections WHERE LOWER(COALESCE(NULLIF(remark, ''), url)) LIKE ? ESCAPE '\' OR LOWER(id) LIKE ? ESCAPE '\'`
+	case "batch_task":
+		query = `SELECT COUNT(*) FROM batch_task_queues WHERE LOWER(COALESCE(NULLIF(title, ''), id)) LIKE ? ESCAPE '\' OR LOWER(id) LIKE ? ESCAPE '\'`
+	case "c2_listener":
+		query = `SELECT COUNT(*) FROM c2_listeners WHERE LOWER(name) LIKE ? ESCAPE '\' OR LOWER(id) LIKE ? ESCAPE '\'`
+	}
+	var total int
+	if err := db.QueryRow(query, pattern, pattern).Scan(&total); err != nil {
+		return 0, err
+	}
+	return total, nil
+}
+
 func normalizeRBACResourceLabel(label, id string) string {
 	label = strings.TrimSpace(label)
 	if label == "" {
@@ -966,6 +997,86 @@ func (db *DB) AssignResourcesToUser(userID, resourceType string, resourceIDs []s
 		return 0, err
 	}
 	return created, nil
+}
+
+// AssignResourcesToUserAuto detects each resource's actual type before writing.
+// The whole batch is validated first and committed atomically.
+func (db *DB) AssignResourcesToUserAuto(userID string, resourceIDs []string) (int64, map[string]string, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" || len(resourceIDs) == 0 {
+		return 0, nil, errors.New("user_id and resource_ids are required")
+	}
+	if len(resourceIDs) > RBACMaxBatchResourceAssignments {
+		return 0, nil, fmt.Errorf("一次最多授权 %d 个资源", RBACMaxBatchResourceAssignments)
+	}
+	uniqueIDs := make([]string, 0, len(resourceIDs))
+	seen := make(map[string]struct{}, len(resourceIDs))
+	for _, rawID := range resourceIDs {
+		id := strings.TrimSpace(rawID)
+		if id == "" {
+			return 0, nil, errors.New("资源 ID 不能为空")
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		uniqueIDs = append(uniqueIDs, id)
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return 0, nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var userExists int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM rbac_users WHERE id = ?`, userID).Scan(&userExists); err != nil {
+		return 0, nil, err
+	}
+	if userExists == 0 {
+		return 0, nil, errors.New("用户不存在")
+	}
+
+	typeTablePairs := []struct{ resourceType, table string }{
+		{"project", "projects"}, {"conversation", "conversations"},
+		{"vulnerability", "vulnerabilities"}, {"webshell", "webshell_connections"},
+		{"batch_task", "batch_task_queues"}, {"c2_listener", "c2_listeners"},
+	}
+	detected := make(map[string]string, len(uniqueIDs))
+	for _, resourceID := range uniqueIDs {
+		for _, pair := range typeTablePairs {
+			var exists int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM `+pair.table+` WHERE id = ?`, resourceID).Scan(&exists); err != nil {
+				return 0, nil, err
+			}
+			if exists > 0 {
+				if previous := detected[resourceID]; previous != "" {
+					return 0, nil, fmt.Errorf("资源 ID 同时匹配多个类型: %s (%s, %s)", resourceID, previous, pair.resourceType)
+				}
+				detected[resourceID] = pair.resourceType
+			}
+		}
+		if detected[resourceID] == "" {
+			return 0, nil, fmt.Errorf("资源不存在: %s", resourceID)
+		}
+	}
+
+	var created int64
+	for _, resourceID := range uniqueIDs {
+		result, err := tx.Exec(`
+			INSERT OR IGNORE INTO rbac_resource_assignments (id, user_id, resource_type, resource_id, created_at)
+			VALUES (?, ?, ?, ?, ?)
+		`, uuid.NewString(), userID, detected[resourceID], resourceID, time.Now())
+		if err != nil {
+			return 0, nil, err
+		}
+		if n, err := result.RowsAffected(); err == nil {
+			created += n
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, nil, err
+	}
+	return created, detected, nil
 }
 
 func (db *DB) ListRBACUsers() ([]RBACUser, error) {
@@ -1257,16 +1368,50 @@ func (db *DB) ListRBACResourceAssignments(userID string) ([]RBACResourceAssignme
 }
 
 func (db *DB) DeleteRBACResourceAssignment(id string) error {
+	_, err := db.DeleteRBACResourceAssignmentWithDetails(id)
+	return err
+}
+
+// DeleteRBACResourceAssignmentWithDetails atomically removes an assignment and
+// returns the deleted row so callers can write a complete, attributable audit
+// event without racing a separate lookup against another delete.
+func (db *DB) DeleteRBACResourceAssignmentWithDetails(id string) (*RBACResourceAssignment, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
-		return errors.New("assignment id is required")
+		return nil, errors.New("assignment id is required")
 	}
-	result, err := db.Exec(`DELETE FROM rbac_resource_assignments WHERE id = ?`, id)
+	tx, err := db.Begin()
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if affected, err := result.RowsAffected(); err == nil && affected == 0 {
-		return errors.New("资源授权不存在或已撤销")
+	defer tx.Rollback()
+
+	var row RBACResourceAssignment
+	var createdAt string
+	err = tx.QueryRow(`
+		SELECT id, user_id, resource_type, resource_id, created_at
+		FROM rbac_resource_assignments
+		WHERE id = ?
+	`, id).Scan(&row.ID, &row.UserID, &row.ResourceType, &row.ResourceID, &createdAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, errors.New("资源授权不存在或已撤销")
 	}
-	return nil
+	if err != nil {
+		return nil, err
+	}
+	row.CreatedAt = parseDBTime(createdAt)
+
+	result, err := tx.Exec(`DELETE FROM rbac_resource_assignments WHERE id = ?`, id)
+	if err != nil {
+		return nil, err
+	}
+	if affected, rowsErr := result.RowsAffected(); rowsErr != nil {
+		return nil, rowsErr
+	} else if affected != 1 {
+		return nil, errors.New("资源授权不存在或已撤销")
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return &row, nil
 }

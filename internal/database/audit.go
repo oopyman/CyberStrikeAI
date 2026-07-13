@@ -28,18 +28,19 @@ type AuditLog struct {
 
 // ListAuditLogsFilter query parameters.
 type ListAuditLogsFilter struct {
-	Actor        string
-	Level        string
-	Category     string
-	Action       string
-	Result       string
-	Query        string
-	ResourceType string
-	ResourceID   string
-	Since        *time.Time
-	Until        *time.Time
-	Limit        int
-	Offset       int
+	Actor         string
+	Level         string
+	Category      string
+	Action        string
+	Result        string
+	Query         string
+	ResourceType  string
+	ResourceID    string
+	RelatedUserID string
+	Since         *time.Time
+	Until         *time.Time
+	Limit         int
+	Offset        int
 }
 
 func buildAuditLogsWhere(filter ListAuditLogsFilter) (string, []interface{}) {
@@ -72,6 +73,10 @@ func buildAuditLogsWhere(filter ListAuditLogsFilter) (string, []interface{}) {
 	if filter.ResourceID != "" {
 		conditions = append(conditions, "resource_id = ?")
 		args = append(args, filter.ResourceID)
+	}
+	if relatedUserID := strings.TrimSpace(filter.RelatedUserID); relatedUserID != "" {
+		conditions = append(conditions, `(resource_id = ? OR detail_json LIKE ? OR detail_json LIKE ?)`)
+		args = append(args, relatedUserID, `%"user_id":"`+relatedUserID+`"%`, `%"userId":"`+relatedUserID+`"%`)
 	}
 	if filter.Since != nil {
 		conditions = append(conditions, sqliteEpochGE("created_at", ">="))
