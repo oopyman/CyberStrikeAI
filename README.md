@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="images/logo.png" alt="CyberStrikeAI Logo" width="200">
+  <img src="images/banner.jpg" alt="CyberStrikeAI Logo" width="600">
 </div>
 
 # CyberStrikeAI
