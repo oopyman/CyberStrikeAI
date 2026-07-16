@@ -4,9 +4,17 @@ package builtin
 // 所有代码中使用内置工具名称的地方都应该使用这些常量，而不是硬编码字符串
 const (
 	// 漏洞管理工具
-	ToolRecordVulnerability  = "record_vulnerability"
-	ToolListVulnerabilities  = "list_vulnerabilities"
-	ToolGetVulnerability     = "get_vulnerability"
+	ToolRecordVulnerability = "record_vulnerability"
+	ToolListVulnerabilities = "list_vulnerabilities"
+	ToolGetVulnerability    = "get_vulnerability"
+
+	// 资产管理工具
+	ToolCreateAsset       = "create_asset"
+	ToolGetAsset          = "get_asset"
+	ToolQueryAssets       = "query_assets"
+	ToolUpdateAsset       = "update_asset"
+	ToolDeleteAsset       = "delete_asset"
+	ToolCompleteAssetScan = "complete_asset_scan"
 
 	// 项目黑板（事实）工具
 	ToolUpsertProjectFact    = "upsert_project_fact"
@@ -68,6 +76,12 @@ func IsBuiltinTool(toolName string) bool {
 	case ToolRecordVulnerability,
 		ToolListVulnerabilities,
 		ToolGetVulnerability,
+		ToolCreateAsset,
+		ToolGetAsset,
+		ToolQueryAssets,
+		ToolUpdateAsset,
+		ToolDeleteAsset,
+		ToolCompleteAssetScan,
 		ToolUpsertProjectFact,
 		ToolGetProjectFact,
 		ToolListProjectFacts,
@@ -120,6 +134,12 @@ func GetAllBuiltinTools() []string {
 		ToolRecordVulnerability,
 		ToolListVulnerabilities,
 		ToolGetVulnerability,
+		ToolCreateAsset,
+		ToolGetAsset,
+		ToolQueryAssets,
+		ToolUpdateAsset,
+		ToolDeleteAsset,
+		ToolCompleteAssetScan,
 		ToolUpsertProjectFact,
 		ToolGetProjectFact,
 		ToolListProjectFacts,
