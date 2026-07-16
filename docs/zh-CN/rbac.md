@@ -372,6 +372,10 @@ curl -X POST http://localhost:8080/api/rbac/resource-assignments \
 
 角色变更会撤销会话。让用户重新登录；机器人下一条消息会重新解析权限。
 
+### 忘记了内置 `admin` 密码
+
+优先使用其他具备 `rbac:write` 权限的管理员账号重置。若没有可用的管理员会话，请按[排错指南中的管理员密码恢复流程](troubleshooting.md#忘记-admin-密码)在服务器上紧急重置。
+
 ### `write` 权限存在但全局配置仍被拒绝
 
 全局对象写操作要求对应权限的 Scope 为 `all`。创建一个 `all` Scope 的专用管理角色，而不是扩大无关权限。
@@ -383,4 +387,3 @@ curl -X POST http://localhost:8080/api/rbac/resource-assignments \
 ### 外部 MCP 提示需要 global scope
 
 除 `mcp:external:execute` 外，该权限的 Scope 还必须为 `all`。外部 MCP 的数据边界不由本地资源授权自动保护。
-

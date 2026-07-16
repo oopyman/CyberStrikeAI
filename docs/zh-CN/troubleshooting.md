@@ -28,7 +28,17 @@ https://127.0.0.1:8080/
 - 浏览器 Cookie 是否异常，可尝试无痕窗口。
 - 审计日志中是否有登录失败节流。
 
-生产环境忘记密码时，需在服务器上通过 RBAC 用户管理重置，或直接更新数据库中的用户密码哈希。
+### 忘记 `admin` 密码
+
+如果仍有其他具备 `rbac:write` 权限的管理员账号，优先在 **平台权限 → 用户管理** 中重置密码。
+
+如果没有可用的管理员会话，可在服务器上紧急重置内置 `admin` 账号。先停止 CyberStrikeAI 服务并备份数据库，然后在项目根目录执行以下命令，按提示输入并确认新密码：
+
+```bash
+HASH=$(htpasswd -nBC 10 '' | cut -d: -f2 | tr -d '\n') && sqlite3 data/conversations.db "UPDATE rbac_users SET password_hash='$HASH', updated_at=CURRENT_TIMESTAMP WHERE id='admin' AND username='admin' AND is_builtin=1; SELECT changes();"
+```
+
+输出 `1` 表示修改成功。该命令需要 `sqlite3` 和 `htpasswd`；如果 `config.yaml` 中的 `database.path` 不是默认值，请替换 `data/conversations.db`。密码输入不会显示，也不会写入 Shell 历史，并以 bcrypt 哈希保存。完成后重新启动服务，使原有登录会话失效。
 
 ## 模型无响应
 

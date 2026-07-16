@@ -360,6 +360,10 @@ Inspect the scope for that specific permission, not only the overall display sco
 
 Role changes revoke sessions. Sign in again. Robots resolve again on the next message.
 
+### The built-in `admin` password is lost
+
+Prefer resetting it from another administrator account with `rbac:write`. If no administrator session is available, follow the [administrator password recovery procedure](troubleshooting.md#recover-a-forgotten-admin-password) on the server.
+
 ### A global mutation is denied despite `write`
 
 Process-global definitions require the corresponding permission with `all` scope. Create a dedicated global administration role instead of widening unrelated permissions.
@@ -371,4 +375,3 @@ Process-global definitions require the corresponding permission with `all` scope
 ### External MCP requires global scope
 
 The user needs `mcp:external:execute`, and that permission's scope must be `all`.
-
