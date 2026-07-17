@@ -18,6 +18,11 @@ type AssetHandler struct {
 	logger *zap.Logger
 }
 
+const (
+	maxAssetImportBatch    = 100000
+	maxAssetOperationBatch = 10000
+)
+
 func NewAssetHandler(db *database.DB, logger *zap.Logger) *AssetHandler {
 	return &AssetHandler{db: db, logger: logger}
 }
@@ -25,6 +30,13 @@ func NewAssetHandler(db *database.DB, logger *zap.Logger) *AssetHandler {
 func assetAccess(c *gin.Context) database.RBACListAccess {
 	if session, ok := security.CurrentSession(c); ok {
 		return database.RBACListAccess{UserID: session.UserID, Scope: session.Scope}
+	}
+	return database.RBACListAccess{}
+}
+
+func assetAccessForPermission(c *gin.Context, permission string) database.RBACListAccess {
+	if session, ok := security.CurrentSession(c); ok {
+		return database.RBACListAccess{UserID: session.UserID, Scope: session.ScopeFor(permission)}
 	}
 	return database.RBACListAccess{}
 }
@@ -51,14 +63,35 @@ type updateAssetsProjectRequest struct {
 	ProjectID string   `json:"project_id"`
 }
 
+type bulkUpdateAssetsRequest struct {
+	AssetIDs          []string `json:"asset_ids" binding:"required"`
+	Status            *string  `json:"status"`
+	ResponsiblePerson *string  `json:"responsible_person"`
+	Department        *string  `json:"department"`
+	BusinessSystem    *string  `json:"business_system"`
+	Environment       *string  `json:"environment"`
+	Criticality       *string  `json:"criticality"`
+	AddTags           []string `json:"add_tags"`
+	RemoveTags        []string `json:"remove_tags"`
+}
+
+type assetIDsRequest struct {
+	AssetIDs []string `json:"asset_ids" binding:"required"`
+}
+
+type mergeAssetsRequest struct {
+	AssetIDs  []string `json:"asset_ids" binding:"required"`
+	PrimaryID string   `json:"primary_id"`
+}
+
 func (h *AssetHandler) Import(c *gin.Context) {
 	var req importAssetsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if len(req.Assets) == 0 || len(req.Assets) > 1000 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "assets 数量必须在 1-1000 之间"})
+	if len(req.Assets) == 0 || len(req.Assets) > maxAssetImportBatch {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "assets 数量必须在 1-100000 之间"})
 		return
 	}
 	owner := ""
@@ -132,6 +165,11 @@ func assetListFilterFromQuery(c *gin.Context) (database.AssetListFilter, error) 
 		Source: strings.TrimSpace(c.Query("source")), Tag: strings.TrimSpace(c.Query("tag")), Host: strings.TrimSpace(c.Query("host")),
 		IP: strings.TrimSpace(c.Query("ip")), Domain: strings.TrimSpace(c.Query("domain")), ScanState: strings.ToLower(strings.TrimSpace(c.Query("scan_state"))),
 		SortBy: strings.ToLower(strings.TrimSpace(c.Query("sort_by"))), SortOrder: strings.ToLower(strings.TrimSpace(c.Query("sort_order"))),
+		RiskLevel: strings.ToLower(strings.TrimSpace(c.Query("risk_level"))),
+		Country:   strings.TrimSpace(c.Query("country")), Province: strings.TrimSpace(c.Query("province")), City: strings.TrimSpace(c.Query("city")),
+		ResponsiblePerson: strings.TrimSpace(c.Query("responsible_person")), Department: strings.TrimSpace(c.Query("department")),
+		BusinessSystem: strings.TrimSpace(c.Query("business_system")), Environment: strings.ToLower(strings.TrimSpace(c.Query("environment"))),
+		Criticality: strings.ToLower(strings.TrimSpace(c.Query("criticality"))),
 	}
 	if raw := strings.TrimSpace(c.Query("port")); raw != "" {
 		port, err := strconv.Atoi(raw)
@@ -140,11 +178,32 @@ func assetListFilterFromQuery(c *gin.Context) (database.AssetListFilter, error) 
 		}
 		filter.Port = &port
 	}
+	for field, target := range map[string]**int{
+		"min_vulnerabilities": &filter.MinVulnerabilities,
+		"max_vulnerabilities": &filter.MaxVulnerabilities,
+		"scan_overdue_days":   &filter.ScanOverdueDays,
+	} {
+		raw := strings.TrimSpace(c.Query(field))
+		if raw == "" {
+			continue
+		}
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 0 || (field == "scan_overdue_days" && value == 0) {
+			return filter, &assetQueryError{field: field, value: raw}
+		}
+		*target = &value
+	}
 	var err error
 	if filter.LastScanBefore, err = parseAssetQueryTime("last_scan_before", c.Query("last_scan_before")); err != nil {
 		return filter, err
 	}
 	if filter.LastScanAfter, err = parseAssetQueryTime("last_scan_after", c.Query("last_scan_after")); err != nil {
+		return filter, err
+	}
+	if filter.FirstSeenBefore, err = parseAssetQueryTime("first_seen_before", c.Query("first_seen_before")); err != nil {
+		return filter, err
+	}
+	if filter.FirstSeenAfter, err = parseAssetQueryTime("first_seen_after", c.Query("first_seen_after")); err != nil {
 		return filter, err
 	}
 	if filter.LastSeenBefore, err = parseAssetQueryTime("last_seen_before", c.Query("last_seen_before")); err != nil {
@@ -154,6 +213,21 @@ func assetListFilterFromQuery(c *gin.Context) (database.AssetListFilter, error) 
 		return filter, err
 	}
 	return filter, nil
+}
+
+// Selection resolves all assets matching the current filter for cross-page actions.
+func (h *AssetHandler) Selection(c *gin.Context) {
+	filter, err := assetListFilterFromQuery(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	assets, total, err := h.db.ListAssetsForOperation(maxAssetOperationBatch, filter, assetAccess(c))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error(), "total": total})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"assets": assets, "total": total})
 }
 
 type assetQueryError struct{ field, value string }
@@ -200,8 +274,8 @@ func (h *AssetHandler) RecordScans(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if len(req.Scans) == 0 || len(req.Scans) > 1000 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "scans 数量必须在 1-1000 之间"})
+	if len(req.Scans) == 0 || len(req.Scans) > maxAssetOperationBatch {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "scans 数量必须在 1-10000 之间"})
 		return
 	}
 	access := assetAccess(c)
@@ -273,8 +347,8 @@ func (h *AssetHandler) UpdateProjectBinding(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if len(req.AssetIDs) == 0 || len(req.AssetIDs) > 1000 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "asset_ids 数量必须在 1-1000 之间"})
+	if len(req.AssetIDs) == 0 || len(req.AssetIDs) > maxAssetOperationBatch {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "asset_ids 数量必须在 1-10000 之间"})
 		return
 	}
 	req.ProjectID = strings.TrimSpace(req.ProjectID)
@@ -294,6 +368,167 @@ func (h *AssetHandler) UpdateProjectBinding(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"updated": updated, "project_id": req.ProjectID})
+}
+
+func (h *AssetHandler) BulkUpdate(c *gin.Context) {
+	var req bulkUpdateAssetsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if len(req.AssetIDs) == 0 || len(req.AssetIDs) > maxAssetOperationBatch {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "asset_ids 数量必须在 1-10000 之间"})
+		return
+	}
+	updated, err := h.db.UpdateAssetsBulk(req.AssetIDs, database.AssetBulkPatch{
+		Status: req.Status, ResponsiblePerson: req.ResponsiblePerson, Department: req.Department,
+		BusinessSystem: req.BusinessSystem, Environment: req.Environment, Criticality: req.Criticality,
+		AddTags: req.AddTags, RemoveTags: req.RemoveTags,
+	}, assetAccess(c))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"updated": updated})
+}
+
+func (h *AssetHandler) BatchDelete(c *gin.Context) {
+	var req assetIDsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if len(req.AssetIDs) == 0 || len(req.AssetIDs) > maxAssetOperationBatch {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "asset_ids 数量必须在 1-10000 之间"})
+		return
+	}
+	deleted, err := h.db.DeleteAssets(req.AssetIDs, assetAccess(c))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"deleted": deleted})
+}
+
+func assetIdentityKeys(asset *database.Asset) map[string]struct{} {
+	keys := map[string]struct{}{}
+	if value := strings.ToLower(strings.TrimSpace(asset.Domain)); value != "" {
+		keys["domain:"+value] = struct{}{}
+	}
+	if value := strings.ToLower(strings.Trim(strings.TrimSpace(asset.IP), "[]")); value != "" {
+		keys["ip:"+value] = struct{}{}
+	}
+	if value := strings.ToLower(strings.TrimSpace(asset.Host)); value != "" {
+		keys["host:"+value] = struct{}{}
+	}
+	return keys
+}
+
+func shareAssetIdentity(left, right *database.Asset) bool {
+	for key := range assetIdentityKeys(left) {
+		if _, ok := assetIdentityKeys(right)[key]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// Merge keeps the selected primary asset and safely combines compatible duplicate metadata.
+func (h *AssetHandler) Merge(c *gin.Context) {
+	var req mergeAssetsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if len(req.AssetIDs) < 2 || len(req.AssetIDs) > 100 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "合并资产数量必须在 2-100 之间"})
+		return
+	}
+	writeAccess := assetAccessForPermission(c, "asset:write")
+	deleteAccess := assetAccessForPermission(c, "asset:delete")
+	primaryID := strings.TrimSpace(req.PrimaryID)
+	if primaryID == "" {
+		primaryID = strings.TrimSpace(req.AssetIDs[0])
+	}
+	primary, err := h.db.GetAsset(primaryID, writeAccess)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "主资产不存在或无权访问"})
+		return
+	}
+	others := make([]*database.Asset, 0, len(req.AssetIDs)-1)
+	seen := map[string]struct{}{primaryID: {}}
+	for _, id := range req.AssetIDs {
+		id = strings.TrimSpace(id)
+		if id == "" || id == primaryID {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		item, err := h.db.GetAsset(id, writeAccess)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "部分资产不存在或无权访问"})
+			return
+		}
+		if !shareAssetIdentity(primary, item) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "所选资产没有共同域名、IP 或 Host，不能判定为重复资产"})
+			return
+		}
+		others = append(others, item)
+	}
+	if len(others) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "至少需要两个不同资产"})
+		return
+	}
+	mergeText := func(dst *string, src string) {
+		if strings.TrimSpace(*dst) == "" && strings.TrimSpace(src) != "" {
+			*dst = src
+		}
+	}
+	tagSet := map[string]struct{}{}
+	for _, tag := range primary.Tags {
+		tagSet[tag] = struct{}{}
+	}
+	for _, item := range others {
+		mergeText(&primary.ProjectID, item.ProjectID)
+		mergeText(&primary.Host, item.Host)
+		mergeText(&primary.IP, item.IP)
+		mergeText(&primary.Domain, item.Domain)
+		mergeText(&primary.Protocol, item.Protocol)
+		mergeText(&primary.Title, item.Title)
+		mergeText(&primary.Server, item.Server)
+		mergeText(&primary.Country, item.Country)
+		mergeText(&primary.Province, item.Province)
+		mergeText(&primary.City, item.City)
+		mergeText(&primary.ResponsiblePerson, item.ResponsiblePerson)
+		mergeText(&primary.Department, item.Department)
+		mergeText(&primary.BusinessSystem, item.BusinessSystem)
+		mergeText(&primary.Environment, item.Environment)
+		mergeText(&primary.Criticality, item.Criticality)
+		for _, tag := range item.Tags {
+			tagSet[tag] = struct{}{}
+		}
+	}
+	primary.Tags = primary.Tags[:0]
+	for tag := range tagSet {
+		primary.Tags = append(primary.Tags, tag)
+	}
+	if len(primary.Tags) > 30 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "合并后标签超过 30 个"})
+		return
+	}
+	ids := make([]string, 0, len(others))
+	for _, item := range others {
+		ids = append(ids, item.ID)
+	}
+	merged, err := h.db.MergeAssets(primary, ids, writeAccess, deleteAccess)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	updated, _ := h.db.GetAsset(primary.ID, writeAccess)
+	c.JSON(http.StatusOK, gin.H{"merged": merged, "asset": updated})
 }
 
 func (h *AssetHandler) Delete(c *gin.Context) {

@@ -775,7 +775,7 @@ func (h *ConfigHandler) UpdateConfig(c *gin.Context) {
 	// 更新FOFA配置
 	if req.FOFA != nil {
 		h.config.FOFA = *req.FOFA
-		h.logger.Info("更新FOFA配置", zap.String("email", h.config.FOFA.Email))
+		h.logger.Info("更新FOFA配置", zap.String("base_url", h.config.FOFA.BaseURL))
 	}
 
 	// 更新MCP配置
@@ -1788,7 +1788,7 @@ func updateFOFAConfig(doc *yaml.Node, cfg config.FofaConfig) {
 	root := doc.Content[0]
 	fofaNode := ensureMap(root, "fofa")
 	setStringInMap(fofaNode, "base_url", cfg.BaseURL)
-	setStringInMap(fofaNode, "email", cfg.Email)
+	removeKeyFromMap(fofaNode, "email")
 	setStringInMap(fofaNode, "api_key", cfg.APIKey)
 }
 
@@ -2100,6 +2100,18 @@ func setStringInMap(mapNode *yaml.Node, key, value string) {
 	valueNode.Tag = "!!str"
 	valueNode.Style = 0
 	valueNode.Value = value
+}
+
+func removeKeyFromMap(mapNode *yaml.Node, key string) {
+	if mapNode == nil || mapNode.Kind != yaml.MappingNode {
+		return
+	}
+	for i := 0; i+1 < len(mapNode.Content); i += 2 {
+		if mapNode.Content[i].Value == key {
+			mapNode.Content = append(mapNode.Content[:i], mapNode.Content[i+2:]...)
+			return
+		}
+	}
 }
 
 func setStringSliceInMap(mapNode *yaml.Node, key string, values []string) {

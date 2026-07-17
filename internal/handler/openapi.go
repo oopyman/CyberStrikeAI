@@ -241,6 +241,58 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 						},
 					},
 				},
+				"AssetImportItem": map[string]interface{}{
+					"type":        "object",
+					"description": "待导入资产；host、ip、domain 至少一项非空",
+					"properties": map[string]interface{}{
+						"project_id":         map[string]interface{}{"type": "string", "description": "所属项目 ID；调用者必须有权访问"},
+						"host":               map[string]interface{}{"type": "string", "maxLength": 500, "example": "https://app.example.com:443"},
+						"ip":                 map[string]interface{}{"type": "string", "example": "192.0.2.10"},
+						"port":               map[string]interface{}{"type": "integer", "minimum": 0, "maximum": 65535, "example": 443},
+						"domain":             map[string]interface{}{"type": "string", "example": "app.example.com"},
+						"protocol":           map[string]interface{}{"type": "string", "example": "https"},
+						"title":              map[string]interface{}{"type": "string", "maxLength": 500},
+						"server":             map[string]interface{}{"type": "string", "maxLength": 255, "example": "nginx"},
+						"country":            map[string]interface{}{"type": "string"},
+						"province":           map[string]interface{}{"type": "string"},
+						"city":               map[string]interface{}{"type": "string"},
+						"responsible_person": map[string]interface{}{"type": "string", "maxLength": 255, "description": "资产负责人"},
+						"department":         map[string]interface{}{"type": "string", "maxLength": 255, "description": "所属部门"},
+						"business_system":    map[string]interface{}{"type": "string", "maxLength": 255, "description": "所属业务系统"},
+						"environment":        map[string]interface{}{"type": "string", "enum": []string{"production", "staging", "testing", "development", "other"}},
+						"criticality":        map[string]interface{}{"type": "string", "enum": []string{"critical", "high", "medium", "low"}},
+						"source":             map[string]interface{}{"type": "string"},
+						"source_query":       map[string]interface{}{"type": "string"},
+						"status":             map[string]interface{}{"type": "string", "enum": []string{"active", "inactive"}, "default": "active"},
+						"tags": map[string]interface{}{
+							"type":     "array",
+							"maxItems": 30,
+							"items":    map[string]interface{}{"type": "string", "maxLength": 64},
+						},
+					},
+				},
+				"AssetImportRequest": map[string]interface{}{
+					"type":     "object",
+					"required": []string{"assets"},
+					"properties": map[string]interface{}{
+						"assets": map[string]interface{}{
+							"type":     "array",
+							"minItems": 1,
+							"maxItems": 100000,
+							"items":    map[string]interface{}{"$ref": "#/components/schemas/AssetImportItem"},
+						},
+						"source":       map[string]interface{}{"type": "string", "description": "未在资产中填写来源时使用的默认来源"},
+						"source_query": map[string]interface{}{"type": "string", "description": "默认来源查询或导入文件名"},
+					},
+				},
+				"AssetImportResult": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"created": map[string]interface{}{"type": "integer", "description": "新建数量", "example": 120},
+						"updated": map[string]interface{}{"type": "integer", "description": "去重合并数量", "example": 8},
+						"skipped": map[string]interface{}{"type": "integer", "description": "跳过数量", "example": 2},
+					},
+				},
 				"ExecutionResult": map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -2431,6 +2483,36 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 						"401": map[string]interface{}{
 							"description": "未授权",
 						},
+					},
+				},
+			},
+			"/api/assets/import": map[string]interface{}{
+				"post": map[string]interface{}{
+					"tags":        []string{"资产管理"},
+					"summary":     "批量导入资产",
+					"description": "新增或按“目标 + 端口 + 协议”去重更新资产。接收 JSON，不直接接收 XLSX/CSV 文件；单次最多 100000 条，需要 asset:write 权限。",
+					"operationId": "importAssets",
+					"requestBody": map[string]interface{}{
+						"required": true,
+						"content": map[string]interface{}{
+							"application/json": map[string]interface{}{
+								"schema": map[string]interface{}{"$ref": "#/components/schemas/AssetImportRequest"},
+							},
+						},
+					},
+					"responses": map[string]interface{}{
+						"200": map[string]interface{}{
+							"description": "导入完成",
+							"content": map[string]interface{}{
+								"application/json": map[string]interface{}{
+									"schema": map[string]interface{}{"$ref": "#/components/schemas/AssetImportResult"},
+								},
+							},
+						},
+						"400": map[string]interface{}{"description": "数量或资产字段校验失败"},
+						"401": map[string]interface{}{"description": "未授权"},
+						"403": map[string]interface{}{"description": "缺少 asset:write 权限或无权访问指定项目"},
+						"500": map[string]interface{}{"description": "导入事务失败"},
 					},
 				},
 			},

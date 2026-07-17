@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -36,7 +37,7 @@ func NewFofaHandler(cfg *config.Config, logger *zap.Logger) *FofaHandler {
 	return &FofaHandler{
 		cfg:          cfg,
 		logger:       logger,
-		client:       &http.Client{Timeout: 30 * time.Second},
+		client:       &http.Client{Timeout: 60 * time.Second},
 		openAIClient: openaiClient.NewClient(llmCfg, llmHTTPClient, logger),
 	}
 }
@@ -80,22 +81,15 @@ type fofaSearchResponse struct {
 	Results      []map[string]interface{} `json:"results"`
 }
 
-func (h *FofaHandler) resolveCredentials() (email, apiKey string) {
-	// 优先环境变量（便于容器部署），其次配置文件
-	email = strings.TrimSpace(os.Getenv("FOFA_EMAIL"))
-	apiKey = strings.TrimSpace(os.Getenv("FOFA_API_KEY"))
-	if email != "" && apiKey != "" {
-		return email, apiKey
+func (h *FofaHandler) resolveAPIKey() string {
+	// 优先环境变量（便于容器部署），其次配置文件。
+	if apiKey := strings.TrimSpace(os.Getenv("FOFA_API_KEY")); apiKey != "" {
+		return apiKey
 	}
 	if h.cfg != nil {
-		if email == "" {
-			email = strings.TrimSpace(h.cfg.FOFA.Email)
-		}
-		if apiKey == "" {
-			apiKey = strings.TrimSpace(h.cfg.FOFA.APIKey)
-		}
+		return strings.TrimSpace(h.cfg.FOFA.APIKey)
 	}
-	return email, apiKey
+	return ""
 }
 
 func (h *FofaHandler) resolveBaseURL() string {
@@ -357,12 +351,12 @@ func (h *FofaHandler) Search(c *gin.Context) {
 		req.Fields = "host,ip,port,domain,title,protocol,country,province,city,server"
 	}
 
-	email, apiKey := h.resolveCredentials()
-	if email == "" || apiKey == "" {
+	apiKey := h.resolveAPIKey()
+	if apiKey == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "FOFA 未配置：请在系统设置中填写 FOFA Email/API Key，或设置环境变量 FOFA_EMAIL/FOFA_API_KEY",
-			"need":    []string{"fofa.email", "fofa.api_key"},
-			"env_key": []string{"FOFA_EMAIL", "FOFA_API_KEY"},
+			"error":   "FOFA 未配置：请在系统设置的资产管理中填写 FOFA API Key，或设置环境变量 FOFA_API_KEY",
+			"need":    []string{"fofa.api_key"},
+			"env_key": []string{"FOFA_API_KEY"},
 		})
 		return
 	}
@@ -377,7 +371,6 @@ func (h *FofaHandler) Search(c *gin.Context) {
 	}
 
 	params := u.Query()
-	params.Set("email", email)
 	params.Set("key", apiKey)
 	params.Set("qbase64", qb64)
 	params.Set("size", fmt.Sprintf("%d", req.Size))
@@ -396,10 +389,18 @@ func (h *FofaHandler) Search(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建请求失败: " + err.Error()})
 		return
 	}
+	httpReq.Header.Set("User-Agent", "CyberStrikeAI/1.7.4")
+	httpReq.Header.Set("Accept", "application/json")
 
 	resp, err := h.client.Do(httpReq)
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "请求 FOFA 失败: " + err.Error()})
+		status, message, timeout := safeFofaRequestError(err)
+		h.logger.Warn("请求 FOFA 失败",
+			zap.String("host", u.Host),
+			zap.Bool("timeout", timeout),
+			zap.String("error_type", fmt.Sprintf("%T", err)),
+		)
+		c.JSON(status, gin.H{"error": message})
 		return
 	}
 	defer resp.Body.Close()
@@ -446,6 +447,20 @@ func (h *FofaHandler) Search(c *gin.Context) {
 		ResultsCount: len(results),
 		Results:      results,
 	})
+}
+
+func safeFofaRequestError(err error) (status int, message string, timeout bool) {
+	var netErr net.Error
+	timeout = errors.Is(err, context.DeadlineExceeded) ||
+		(errors.As(err, &netErr) && netErr.Timeout())
+	if timeout {
+		return http.StatusGatewayTimeout,
+			"FOFA 请求超时（60 秒）：请稍后重试，或减少返回数量和返回字段",
+			true
+	}
+	return http.StatusBadGateway,
+		"无法连接 FOFA 服务，请检查服务器网络或代理配置",
+		false
 }
 
 func splitAndCleanCSV(s string) []string {

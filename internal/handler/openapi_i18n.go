@@ -11,7 +11,7 @@ var apiDocI18nTagToKey = map[string]string{
 	"知识库": "knowledgeBase", "MCP": "mcp",
 	"FOFA信息收集": "fofaRecon", "终端": "terminal", "WebShell管理": "webshellManagement",
 	"对话附件": "chatUploads", "机器人集成": "robotIntegration", "多代理Markdown": "markdownAgents",
-	"项目管理": "projectManagement",
+	"项目管理": "projectManagement", "资产管理": "assetManagement",
 }
 
 var apiDocI18nSummaryToKey = map[string]string{
@@ -71,8 +71,9 @@ var apiDocI18nSummaryToKey = map[string]string{
 	"列出技能包文件": "listSkillPackageFiles", "获取技能包文件内容": "getSkillPackageFile", "写入技能包文件": "putSkillPackageFile",
 	"批量获取工具名称": "batchGetToolNames",
 	"获取知识库统计":  "getKnowledgeStats",
-	"列出项目": "listProjects", "创建项目": "createProject", "获取项目": "getProject",
+	"列出项目":     "listProjects", "创建项目": "createProject", "获取项目": "getProject",
 	"更新项目": "updateProject", "删除项目": "deleteProject",
+	"批量导入资产":        "importAssets",
 	"列出或按 key 获取事实": "listProjectFacts", "创建/更新事实": "upsertProjectFact",
 	"获取项目事实攻击路径图": "getProjectFactGraph", "列出项目全部事实边": "listProjectFactEdges",
 	"添加事实边": "createProjectFactEdge", "删除事实边": "deleteProjectFactEdge",
@@ -109,6 +110,9 @@ var apiDocI18nResponseDescToKey = map[string]string{
 	"成功": "success", "nodes + edges": "factGraphNodesEdges",
 	"边列表": "edgeList", "边已创建": "edgeCreated",
 	"沉淀结果（facts/edges/graph）": "promoteAttackChainResult",
+	"导入完成":                    "assetImportCompleted", "数量或资产字段校验失败": "assetImportValidationFailed",
+	"缺少 asset:write 权限或无权访问指定项目": "assetImportForbidden",
+	"导入事务失败": "assetImportTransactionFailed",
 }
 
 // enrichSpecWithI18nKeys 在 spec 的每个 operation 上写入 x-i18n-tags、x-i18n-summary，
