@@ -473,7 +473,17 @@ function renderAssetCoverage(coverage, total) {
         stale: Number(coverage.stale || 0)
     };
     const gauge = document.getElementById('asset-coverage-gauge');
-    if (gauge) gauge.style.setProperty('--asset-coverage-value', rate + '%');
+    const status = document.getElementById('asset-coverage-status');
+    const coverageState = total > 0 ? (rate >= 80 ? 'healthy' : rate >= 50 ? 'warning' : 'critical') : '';
+    if (gauge) {
+        gauge.style.setProperty('--asset-coverage-value', rate + '%');
+        gauge.classList.remove('is-healthy', 'is-warning', 'is-critical');
+        if (coverageState) gauge.classList.add('is-' + coverageState);
+    }
+    if (status) {
+        status.classList.remove('is-healthy', 'is-warning', 'is-critical');
+        if (coverageState) status.classList.add('is-' + coverageState);
+    }
     const setText = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
     setText('asset-coverage-rate', rate + '%');
     setText('asset-coverage-scanned', values.scanned.toLocaleString());
@@ -482,64 +492,31 @@ function renderAssetCoverage(coverage, total) {
     setText('asset-coverage-never', values.never.toLocaleString());
     setText('asset-coverage-stale', values.stale.toLocaleString());
     setText('asset-coverage-status', total ? assetT('assets.coverageMeta', `${values.scanned} / ${total} 已覆盖`, { scanned: values.scanned, total }) : '—');
+    document.getElementById('asset-coverage-never')?.parentElement?.classList.toggle('has-gap', values.never > 0);
+    document.getElementById('asset-coverage-stale')?.parentElement?.classList.toggle('has-gap', values.stale > 0);
 }
 
 function renderAssetProtocolChart(items, total) {
     const root = document.getElementById('asset-protocol-chart');
-    const summary = document.getElementById('asset-protocol-summary');
     const meta = document.getElementById('asset-protocol-meta');
-    const topList = document.getElementById('asset-protocol-top-list');
     if (!root) return;
     if (!items.length) {
-        root.innerHTML = '<div class="muted">' + escapeHtml(assetT('common.noData', '暂无数据')) + '</div>';
-        if (summary) summary.hidden = true;
-        if (topList) topList.innerHTML = '';
+        root.innerHTML = '<div class="asset-protocol-empty"><span>—</span><p>' + escapeHtml(assetT('common.noData', '暂无数据')) + '</p></div>';
         if (meta) meta.textContent = assetT('assets.protocolKinds', '0 种协议', { count: 0 });
         return;
     }
-    if (summary) summary.hidden = false;
     if (meta) meta.textContent = assetT('assets.protocolKinds', `${items.length} 种协议`, { count: items.length });
-    const max = Math.max(...items.map(item => Number(item.count || 0)), 1);
+    const visibleItems = items.slice(0, 5);
+    const max = Math.max(...visibleItems.map(item => Number(item.count || 0)), 1);
     const protocolTotal = items.reduce((sum, item) => sum + Number(item.count || 0), 0);
-    const leading = items.reduce((best, item) => Number(item.count || 0) > Number(best.count || 0) ? item : best, items[0]);
-    const leadingCount = Number(leading.count || 0);
-    const leadingPercent = (total || protocolTotal) ? Math.round(leadingCount / (total || protocolTotal) * 100) : 0;
     const colors = ['#4f7df3', '#6d5df6', '#13b8a6', '#f59e0b', '#ec4899', '#06b6d4', '#8b5cf6', '#94a3b8'];
-    if (summary) {
-        const donut = summary.querySelector('.asset-protocol-donut');
-        const percentNode = donut?.querySelector('strong');
-        const leadName = summary.querySelector('.asset-protocol-lead strong');
-        const leadCount = summary.querySelector('.asset-protocol-lead small');
-        if (donut) {
-            const denominator = Math.max(total || protocolTotal, 1);
-            let cursor = 0;
-            const stops = items.map((item, index) => {
-                const start = cursor;
-                cursor = Math.min(100, cursor + Number(item.count || 0) / denominator * 100);
-                return `${colors[index % colors.length]} ${start.toFixed(2)}% ${cursor.toFixed(2)}%`;
-            });
-            if (cursor < 100) stops.push(`var(--border-color,#e5e7eb) ${cursor.toFixed(2)}% 100%`);
-            donut.style.background = `conic-gradient(from -90deg,${stops.join(',')})`;
-        }
-        if (percentNode) percentNode.textContent = leadingPercent + '%';
-        if (leadName) leadName.textContent = leading.name || 'unknown';
-        if (leadCount) leadCount.textContent = assetT('assets.assetCountUnit', `${leadingCount} 个资产`, { count: leadingCount });
-    }
-    if (topList) {
-        topList.innerHTML = items.slice(0, 3).map((item, index) => {
-            const count = Number(item.count || 0);
-            const percent = total ? count / total * 100 : 0;
-            const displayPercent = percent > 0 && percent < 1 ? '<1%' : Math.round(percent) + '%';
-            return `<div><i style="background:${colors[index]}"></i><span>${escapeHtml(item.name || 'unknown')}</span><strong>${escapeHtml(displayPercent)}</strong></div>`;
-        }).join('');
-    }
-    root.innerHTML = items.map((item, index) => {
+    root.innerHTML = visibleItems.map((item, index) => {
         const count = Number(item.count || 0);
         const width = Math.max(3, Math.round(count / max * 100));
-        const percent = total ? count / total * 100 : 0;
+        const percent = (total || protocolTotal) ? count / (total || protocolTotal) * 100 : 0;
         const displayPercent = percent > 0 && percent < 1 ? '&lt;1%' : Math.round(percent) + '%';
         const color = colors[index % colors.length];
-        return `<div class="asset-bar-row" style="--protocol-color:${color}"><span class="asset-bar-rank">${String(index + 1).padStart(2, '0')}</span><span class="asset-bar-label">${escapeHtml(item.name || 'unknown')}</span><div class="asset-bar-track"><i style="width:${width}%"></i></div><strong>${count}</strong><small>${displayPercent}</small></div>`;
+        return `<div class="asset-bar-row" style="--protocol-color:${color}"><span class="asset-bar-label">${escapeHtml(item.name || 'unknown')}</span><div class="asset-bar-track"><i style="width:${width}%"></i></div><strong>${count.toLocaleString()}</strong><small>${displayPercent}</small></div>`;
     }).join('');
 }
 

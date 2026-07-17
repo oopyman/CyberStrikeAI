@@ -23,7 +23,7 @@
             }
         })();
     </script>
-    <link rel="stylesheet" href="/static/css/style.css?v=20260717-18">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260717-23">
     <link rel="stylesheet" href="/static/css/c2.css">
     <link rel="stylesheet" href="/static/vendor/xterm.css">
     <script src="/static/js/router.js"></script>
@@ -1703,15 +1703,27 @@
                     <div class="page-content asset-content">
                         <div class="asset-overview-summary">
                             <section class="asset-total-card">
-                                <div class="asset-total-card__heading">
-                                    <div class="asset-overview-icon asset-overview-icon--blue" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 8 4-8 4-8-4 8-4Z"/><path d="m4 10 8 4 8-4"/><path d="m4 14 8 4 8-4"/></svg></div>
-                                    <div><span class="asset-eyebrow" data-i18n="assets.totalAssets">资产总数</span><p data-i18n="assets.totalAssetsHint">当前纳入持续监测的资产</p></div>
-                                </div>
-                                <strong id="asset-stat-total" class="asset-total-value">0</strong>
-                                <div class="asset-type-grid">
-                                    <div class="asset-type-item asset-type-item--ip"><span class="asset-type-dot"></span><span data-i18n="assets.ipCount">IP 数量</span><strong id="asset-stat-ips">0</strong></div>
-                                    <div class="asset-type-item asset-type-item--domain"><span class="asset-type-dot"></span><span data-i18n="assets.domainCount">域名数量</span><strong id="asset-stat-domains">0</strong></div>
-                                    <div class="asset-type-item asset-type-item--port"><span class="asset-type-dot"></span><span data-i18n="assets.portCount">端口数量</span><strong id="asset-stat-ports">0</strong></div>
+                                <div class="asset-total-card__layout">
+                                    <div class="asset-inventory-summary">
+                                        <div class="asset-total-card__heading">
+                                            <div class="asset-overview-icon asset-overview-icon--blue" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 8 4-8 4-8-4 8-4Z"/><path d="m4 10 8 4 8-4"/><path d="m4 14 8 4 8-4"/></svg></div>
+                                            <div><span class="asset-eyebrow" data-i18n="assets.totalAssets">资产总数</span><p data-i18n="assets.totalAssetsHint">当前纳入持续监测的资产</p></div>
+                                        </div>
+                                        <strong id="asset-stat-total" class="asset-total-value">0</strong>
+                                        <div class="asset-type-grid">
+                                            <div class="asset-type-item asset-type-item--ip"><span class="asset-type-dot"></span><span data-i18n="assets.ipCount">IP 数量</span><strong id="asset-stat-ips">0</strong></div>
+                                            <div class="asset-type-item asset-type-item--domain"><span class="asset-type-dot"></span><span data-i18n="assets.domainCount">域名数量</span><strong id="asset-stat-domains">0</strong></div>
+                                            <div class="asset-type-item asset-type-item--port"><span class="asset-type-dot"></span><span data-i18n="assets.portCount">端口数量</span><strong id="asset-stat-ports">0</strong></div>
+                                        </div>
+                                    </div>
+                                    <div class="asset-protocol-compact">
+                                        <div class="asset-protocol-compact__header">
+                                            <div><h3 data-i18n="assets.protocolDistribution">协议分布</h3><p data-i18n="assets.protocolDistributionHint">按已识别服务查看资产暴露构成</p></div>
+                                            <span class="asset-panel-meta" id="asset-protocol-meta">—</span>
+                                        </div>
+                                        <div class="asset-protocol-columns"><span data-i18n="assets.protocolName">协议</span><span data-i18n="assets.assetRatio">资产占比</span><span data-i18n="assets.assetAmount">数量</span><span data-i18n="assets.ratio">占比</span></div>
+                                        <div id="asset-protocol-chart" class="asset-bar-chart asset-bar-chart--compact" aria-live="polite"><div class="muted" data-i18n="common.noData">暂无数据</div></div>
+                                    </div>
                                 </div>
                             </section>
                             <section class="asset-recent-card">
@@ -1745,29 +1757,14 @@
                         <section class="asset-panel asset-coverage-panel">
                             <div class="asset-panel-header"><div><h3 data-i18n="assets.scanCoverage">扫描覆盖</h3><p data-i18n="assets.scanCoverageHint">识别未扫描与长期未复查的资产缺口</p></div><span id="asset-coverage-status" class="asset-panel-meta">—</span></div>
                             <div class="asset-coverage-layout">
-                                <div class="asset-coverage-gauge" id="asset-coverage-gauge"><div><strong id="asset-coverage-rate">0%</strong><span data-i18n="assets.overallCoverage">总体覆盖率</span></div></div>
+                                <div class="asset-coverage-overview">
+                                    <div class="asset-coverage-gauge" id="asset-coverage-gauge"><div><strong id="asset-coverage-rate">0%</strong><span data-i18n="assets.overallCoverage">总体覆盖率</span></div></div>
+                                </div>
                                 <div class="asset-coverage-metrics">
-                                    <div><span data-i18n="assets.scannedAssets">已扫描资产</span><strong id="asset-coverage-scanned">0</strong><small data-i18n="assets.scannedAssetsHint">至少完成过一次扫描</small></div>
-                                    <div><span data-i18n="assets.recentlyScanned">近 30 天覆盖</span><strong id="asset-coverage-recent">0</strong><small id="asset-coverage-recent-rate">0%</small></div>
-                                    <div class="asset-coverage-gap"><span data-i18n="assets.neverScanned">从未扫描</span><strong id="asset-coverage-never">0</strong><small data-i18n="assets.neverScannedHint">建议优先纳入扫描</small></div>
-                                    <div class="asset-coverage-gap"><span data-i18n="assets.staleScans">超过 30 天未扫描</span><strong id="asset-coverage-stale">0</strong><small data-i18n="assets.staleScansHint">扫描结果可能已过期</small></div>
-                                </div>
-                            </div>
-                        </section>
-                        <section class="asset-panel asset-protocol-panel">
-                            <div class="asset-panel-header"><div><h3 data-i18n="assets.protocolDistribution">协议分布</h3><p data-i18n="assets.protocolDistributionHint">按已识别服务查看资产暴露构成</p></div><span class="asset-panel-meta" id="asset-protocol-meta">—</span></div>
-                            <div class="asset-protocol-layout">
-                                <div id="asset-protocol-summary" class="asset-protocol-summary" aria-hidden="true">
-                                    <div class="asset-protocol-summary__label" data-i18n="assets.protocolComposition">协议构成</div>
-                                    <div class="asset-protocol-summary__main">
-                                        <div class="asset-protocol-donut"><div><strong>0%</strong><span data-i18n="assets.topProtocolShare">主要协议占比</span></div></div>
-                                        <div class="asset-protocol-lead"><span data-i18n="assets.topProtocol">主要协议</span><strong>—</strong><small>—</small></div>
-                                    </div>
-                                    <div id="asset-protocol-top-list" class="asset-protocol-top-list"></div>
-                                </div>
-                                <div class="asset-protocol-ranking">
-                                    <div class="asset-protocol-columns"><span data-i18n="assets.protocolRank">排名</span><span data-i18n="assets.protocolName">协议</span><span data-i18n="assets.assetRatio">资产占比</span><span data-i18n="assets.assetAmount">数量</span><span data-i18n="assets.ratio">占比</span></div>
-                                    <div id="asset-protocol-chart" class="asset-bar-chart"><div class="muted" data-i18n="common.noData">暂无数据</div></div>
+                                    <div class="asset-coverage-metric asset-coverage-metric--scanned"><span data-i18n="assets.scannedAssets">已扫描资产</span><strong id="asset-coverage-scanned">0</strong><small data-i18n="assets.scannedAssetsHint">至少完成过一次扫描</small></div>
+                                    <div class="asset-coverage-metric asset-coverage-metric--recent"><span data-i18n="assets.recentlyScanned">近 30 天覆盖</span><strong id="asset-coverage-recent">0</strong><small id="asset-coverage-recent-rate">0%</small></div>
+                                    <div class="asset-coverage-metric asset-coverage-metric--never"><span data-i18n="assets.neverScanned">从未扫描</span><strong id="asset-coverage-never">0</strong><small data-i18n="assets.neverScannedHint">建议优先纳入扫描</small></div>
+                                    <div class="asset-coverage-metric asset-coverage-metric--stale"><span data-i18n="assets.staleScans">超过 30 天未扫描</span><strong id="asset-coverage-stale">0</strong><small data-i18n="assets.staleScansHint">扫描结果可能已过期</small></div>
                                 </div>
                             </div>
                         </section>
@@ -6404,7 +6401,7 @@
     <script src="/static/js/modal.js"></script>
     <script src="/static/js/notifications.js"></script>
     <script src="/static/js/info-collect.js?v=20260717-1"></script>
-    <script src="/static/js/assets.js?v=20260717-5"></script>
+    <script src="/static/js/assets.js?v=20260717-7"></script>
     <script src="/static/js/agents.js"></script>
     <script src="/static/js/dashboard.js"></script>
     <script src="/static/js/chat-scroll.js"></script>
