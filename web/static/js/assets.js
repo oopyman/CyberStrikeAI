@@ -1578,18 +1578,26 @@ function fofaResultToAsset(row, fields) {
         const idx = Array.isArray(fields) ? fields.indexOf(name) : -1;
         return idx >= 0 && Array.isArray(row) && row[idx] != null ? String(row[idx]).trim() : '';
     };
+    const firstValue = names => {
+        for (const name of names) {
+            const v = value(name);
+            if (v) return v;
+        }
+        return '';
+    };
     const port = Number.parseInt(value('port'), 10);
-    const rawIP = value('ip');
+    const rawIP = firstValue(['ip', 'ip_str']);
     const ip = assetEditorIsIPv4(rawIP) || assetEditorIsIPv6(rawIP) ? rawIP.toLowerCase() : '';
-    const rawDomain = value('domain');
+    const rawDomain = firstValue(['domain', 'hostname', 'hostnames', 'domains']);
     const domain = rawDomain && !assetEditorIsIPv4(rawDomain) && !assetEditorIsIPv6(rawDomain)
-        ? assetEditorNormalizeDomain(rawDomain)
+        ? assetEditorNormalizeDomain(rawDomain.split(',')[0].replace(/^\[|\]$/g, '').replace(/^"|"$/g, ''))
         : '';
-    const rawProtocol = value('protocol').toLowerCase();
+    const rawProtocol = firstValue(['protocol', 'service.name', 'transport']).toLowerCase();
     return {
-        host: value('host'), ip, port: Number.isFinite(port) ? port : 0, domain,
-        protocol: /^[a-z][a-z0-9+.-]{0,31}$/.test(rawProtocol) ? rawProtocol : '', title: value('title'), server: value('server'), country: value('country'),
-        province: value('province'), city: value('city'), source: 'fofa', status: 'active'
+        host: firstValue(['host', 'hostname']), ip, port: Number.isFinite(port) ? port : 0, domain,
+        protocol: /^[a-z][a-z0-9+.-]{0,31}$/.test(rawProtocol) ? rawProtocol : '', title: firstValue(['title', 'service.http.title']), server: firstValue(['server', 'product']),
+        country: firstValue(['country', 'location.country_cn', 'location.country_name']), province: firstValue(['province', 'location.province_cn']), city: firstValue(['city', 'location.city_cn', 'location.city']),
+        source: (window.infoCollectState?.currentPayload?.provider || 'fofa'), status: 'active'
     };
 }
 
@@ -1607,7 +1615,8 @@ async function importFofaAssetsByIndexes(indexes) {
         alert(assetT('assets.noValidImportTarget', '所选结果中没有可入库的有效资产目标'));
         return;
     }
-    const response = await apiFetch('/api/assets/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ assets, source: 'fofa', source_query: current.query || '' }) });
+    const source = current.provider || 'fofa';
+    const response = await apiFetch('/api/assets/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ assets, source, source_query: current.query || '' }) });
     if (!response.ok) {
         alert(assetT('assets.importFailed', '资产入库失败') + ': ' + await response.text());
         return;

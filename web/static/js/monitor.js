@@ -1915,17 +1915,72 @@ function mergeMcpExecutionIDLists(prev, next) {
 function formatEinoRunRetryMessage(message, data) {
     const d = data && typeof data === 'object' ? data : {};
     const base = String(message || '').trim();
-    const errRaw = d.error != null ? String(d.error).trim() : '';
+    const errRaw = d.errorSummary != null && String(d.errorSummary).trim() !== ''
+        ? String(d.errorSummary).trim()
+        : (d.error != null ? String(d.error).trim() : '');
+    const lines = [];
+    if (base) lines.push(base);
+    const attempt = Number(d.attempt || 0);
+    const maxAttempts = Number(d.maxAttempts || 0);
+    const backoffSec = Number(d.backoffSec || 0);
+    const kind = formatEinoRunRetryKind(d.errorKind);
+    if (Number.isFinite(attempt) && attempt > 0 && Number.isFinite(maxAttempts) && maxAttempts > 0) {
+        const retryPlan = typeof window.t === 'function'
+            ? window.t('chat.einoRunRetryPlan', { attempt: attempt, maxAttempts: maxAttempts, backoffSec: Number.isFinite(backoffSec) && backoffSec > 0 ? backoffSec : '-' })
+            : ('重试进度：第 ' + attempt + '/' + maxAttempts + ' 次，等待 ' + (Number.isFinite(backoffSec) && backoffSec > 0 ? backoffSec : '-') + ' 秒');
+        if (!base || base.indexOf(String(attempt) + '/' + String(maxAttempts)) === -1) {
+            lines.push(retryPlan);
+        }
+    }
+    if (kind) {
+        const kindLabel = typeof window.t === 'function'
+            ? window.t('chat.einoRunRetryReasonKind')
+            : '原因类型';
+        lines.push(kindLabel + '：' + kind);
+    }
     if (!errRaw) {
-        return base;
+        return lines.join('\n');
     }
     const detailLabel = typeof window.t === 'function'
         ? window.t('chat.einoRunRetryErrorDetail')
         : '错误详情';
-    if (base && base.indexOf(errRaw) !== -1) {
-        return base;
+    if (!base || base.indexOf(errRaw) === -1) {
+        lines.push(detailLabel + '：' + errRaw);
     }
-    return base ? (base + '\n' + detailLabel + '：' + errRaw) : (detailLabel + '：' + errRaw);
+    return lines.join('\n');
+}
+
+function formatEinoRunRetryKind(kind) {
+    const key = String(kind || '').trim();
+    if (!key) return '';
+    const labels = {
+        rate_limit: '限流 / 请求过多',
+        retryable_http: '可重试 HTTP 错误',
+        upstream_server: '上游服务错误',
+        http_error: 'HTTP 错误',
+        upstream_busy: '上游繁忙',
+        network: '网络连接异常',
+        stream: '流式读取异常',
+        transient: '临时异常'
+    };
+    if (typeof window.t === 'function') {
+        const translated = window.t('chat.einoRunRetryKind_' + key);
+        if (translated && translated !== 'chat.einoRunRetryKind_' + key) return translated;
+    }
+    return labels[key] || key;
+}
+
+function formatEinoRunRetryTitle(data) {
+    const d = data && typeof data === 'object' ? data : {};
+    const base = typeof window.t === 'function'
+        ? window.t('chat.einoRunRetryTitle')
+        : '🔁 临时错误重试';
+    const attempt = Number(d.attempt || 0);
+    const maxAttempts = Number(d.maxAttempts || 0);
+    if (Number.isFinite(attempt) && attempt > 0 && Number.isFinite(maxAttempts) && maxAttempts > 0) {
+        return base + '（' + attempt + '/' + maxAttempts + '）';
+    }
+    return base;
 }
 
 // 处理流式事件
@@ -2425,12 +2480,9 @@ function handleStreamEvent(event, progressElement, progressId,
 
         case 'eino_run_retry': {
             const d = event.data || {};
-            const title = typeof window.t === 'function'
-                ? window.t('chat.einoRunRetryTitle')
-                : '🔁 临时错误重试';
             const msg = formatEinoRunRetryMessage(event.message, d);
             addTimelineItem(timeline, 'warning', {
-                title: title,
+                title: formatEinoRunRetryTitle(d),
                 message: msg,
                 data: d
             });
@@ -4226,6 +4278,9 @@ function addTimelineItem(timeline, type, options) {
     const itemId = 'timeline-item-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
     item.id = itemId;
     item.className = `timeline-item timeline-item-${type}`;
+    if (type === 'eino_run_retry') {
+        item.classList.add('timeline-item-warning');
+    }
     // 记录类型与参数，便于 languagechange 时刷新标题文案
     item.dataset.timelineType = type;
     if (type === 'iteration') {
@@ -4418,7 +4473,7 @@ function addTimelineItem(timeline, type, options) {
                 ${escapeHtml(options.message || taskCancelledLabel)}
             </div>
         `;
-    } else if (type === 'warning' && options.message) {
+    } else if ((type === 'warning' || type === 'eino_run_retry') && options.message) {
         const streamBody = typeof formatTimelineStreamBody === 'function'
             ? formatTimelineStreamBody(options.message, options.data)
             : options.message;

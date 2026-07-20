@@ -2026,51 +2026,77 @@
                     <div class="page-content">
                         <div class="info-collect-panel">
                             <div class="info-collect-form">
-                                <div class="form-group">
-                                    <label for="fofa-query" data-i18n="infoCollectPage.fofaQuerySyntax">FOFA 查询语法</label>
-                                    <textarea id="fofa-query" class="info-collect-query-input" rows="1" data-i18n="infoCollect.queryPlaceholder" data-i18n-attr="placeholder" placeholder='例如：app="Apache" && country="CN"'></textarea>
-                                    <small class="form-hint" data-i18n="infoCollectPage.formHint">查询语法参考 FOFA 文档，支持 && / || / () 等。</small>
-                                    <div class="info-collect-presets" aria-label="FOFA 查询示例" data-i18n="infoCollectPage.queryPresetsAria" data-i18n-attr="aria-label" data-i18n-skip-text="true">
-                                        <button class="preset-chip" type="button" onclick="applyFofaQueryPreset('app=&quot;Apache&quot; &amp;&amp; country=&quot;CN&quot;')" data-i18n="infoCollectPage.presetApache" data-i18n-attr="title" data-i18n-title="infoCollectPage.fillExample" title="填入示例">Apache + 中国</button>
-                                        <button class="preset-chip" type="button" onclick="applyFofaQueryPreset('title=&quot;登录&quot; &amp;&amp; country=&quot;CN&quot;')" data-i18n="infoCollectPage.presetLogin" data-i18n-attr="title" data-i18n-title="infoCollectPage.fillExample" title="填入示例">登录页 + 中国</button>
-                                        <button class="preset-chip" type="button" onclick="applyFofaQueryPreset('domain=&quot;example.com&quot;')" data-i18n="infoCollectPage.presetDomain" data-i18n-attr="title" data-i18n-title="infoCollectPage.fillExample" title="填入示例">指定域名</button>
-                                        <button class="preset-chip" type="button" onclick="applyFofaQueryPreset('ip=&quot;1.1.1.1&quot;')" data-i18n="infoCollectPage.presetIp" data-i18n-attr="title" data-i18n-title="infoCollectPage.fillExample" title="填入示例">指定 IP</button>
+                                <div class="info-collect-form-top">
+                                    <div class="info-collect-provider-card form-group">
+                                        <div class="info-collect-step-title">
+                                            <span>01</span>
+                                            <label for="fofa-provider">数据源</label>
+                                        </div>
+                                        <select id="fofa-provider" onchange="handleInfoCollectProviderChange()">
+                                            <option value="fofa">FOFA</option>
+                                            <option value="zoomeye">ZoomEye</option>
+                                            <option value="quake">Quake</option>
+                                            <option value="shodan">Shodan</option>
+                                        </select>
+                                        <small class="form-hint">支持 FOFA、ZoomEye、Quake、Shodan；API Key 可在系统设置或环境变量中配置。</small>
+                                    </div>
+                                    <div class="info-collect-query-card form-group">
+                                        <div class="info-collect-step-title">
+                                            <span>02</span>
+                                            <div>查询方式</div>
+                                        </div>
+                                        <div id="info-collect-natural-panel" class="info-collect-query-mode-panel info-collect-natural-panel">
+                                            <label for="fofa-nl" id="info-collect-nl-label" class="info-collect-inner-label">自然语言（可选，AI 解析为查询语法）</label>
+                                            <div class="info-collect-nl-row">
+                                                <textarea id="fofa-nl" class="info-collect-query-input" rows="1" placeholder="例如：找中国的 Apache 站点"></textarea>
+                                                <button id="fofa-nl-parse-btn" class="btn-secondary" type="button" onclick="parseFofaNaturalLanguage()" data-i18n="infoCollectPage.parseBtn" data-i18n-attr="title" data-i18n-title="infoCollectPage.parseBtnTitle" title="将自然语言解析为 FOFA 查询语法">AI 解析</button>
+                                            </div>
+                                            <div id="fofa-nl-status" class="fofa-nl-status muted" style="display: none;" aria-live="polite"></div>
+                                            <small class="form-hint" id="info-collect-parse-hint">解析后会弹窗展示对应数据源语法（可编辑），确认无误后再填入查询框并执行查询。</small>
+                                        </div>
+                                        <div id="info-collect-syntax-panel" class="info-collect-query-mode-panel is-active">
+                                            <label for="fofa-query" id="info-collect-query-label" class="info-collect-inner-label">查询语法（可编辑，可直接查询）</label>
+                                            <div class="info-collect-query-row">
+                                                <textarea id="fofa-query" class="info-collect-query-input" rows="1" placeholder='例如：app="Apache" && country="CN"'></textarea>
+                                                <button id="fofa-query-submit-btn" class="btn-primary" data-require-permission="fofa:execute" type="button" onclick="submitFofaSearch()">查询</button>
+                                            </div>
+                                            <small class="form-hint" id="info-collect-query-hint">选择数据源后会显示对应查询语法提示。</small>
+                                            <div class="info-collect-presets" id="info-collect-query-presets" aria-label="查询示例"></div>
+                                            <div class="info-collect-syntax-guide" id="info-collect-syntax-guide" hidden></div>
+                                        </div>
                                     </div>
                                 </div>
-                                <div class="form-group">
-                                    <label for="fofa-nl" data-i18n="infoCollectPage.naturalLanguage">自然语言（AI 解析为 FOFA 语法）</label>
-                                    <div class="info-collect-nl-row">
-                                        <textarea id="fofa-nl" class="info-collect-query-input" rows="1" data-i18n="infoCollectPage.nlPlaceholder" data-i18n-attr="placeholder" placeholder="例如：找美国 Missouri 的 Apache 站点，标题包含 Home"></textarea>
-                                        <button id="fofa-nl-parse-btn" class="btn-secondary" type="button" onclick="parseFofaNaturalLanguage()" data-i18n="infoCollectPage.parseBtn" data-i18n-attr="title" data-i18n-title="infoCollectPage.parseBtnTitle" title="将自然语言解析为 FOFA 查询语法">AI 解析</button>
+                                <div class="info-collect-options-card">
+                                    <div class="info-collect-step-title">
+                                        <span>03</span>
+                                        <div>返回配置</div>
                                     </div>
-                                    <div id="fofa-nl-status" class="fofa-nl-status muted" style="display: none;" aria-live="polite"></div>
-                                    <small class="form-hint" data-i18n="infoCollectPage.parseHint">解析后会弹窗展示 FOFA 语法（可编辑），确认无误后再填入查询框并执行查询。</small>
-                                </div>
-                                <div class="info-collect-form-row">
-                                    <div class="form-group">
-                                        <label for="fofa-size" data-i18n="infoCollectPage.returnCount">返回数量</label>
-                                        <input type="number" id="fofa-size" min="1" max="10000" value="100" />
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="fofa-page" data-i18n="infoCollectPage.pageNum">页码</label>
-                                        <input type="number" id="fofa-page" min="1" value="1" />
-                                    </div>
-                                    <div class="form-group">
-                                        <label class="checkbox-label" style="margin-top: 24px;">
-                                            <input type="checkbox" id="fofa-full" class="modern-checkbox" />
-                                            <span class="checkbox-custom"></span>
-                                            <span class="checkbox-text" data-i18n="infoCollectPage.fullLabel">full</span>
-                                        </label>
+                                    <div class="info-collect-form-row">
+                                        <div class="form-group">
+                                            <label for="fofa-size" data-i18n="infoCollectPage.returnCount">返回数量</label>
+                                            <input type="number" id="fofa-size" min="1" max="10000" value="100" />
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="fofa-page" data-i18n="infoCollectPage.pageNum">页码</label>
+                                            <input type="number" id="fofa-page" min="1" value="1" />
+                                        </div>
+                                        <div class="form-group" id="info-collect-full-option">
+                                            <label class="checkbox-label">
+                                                <input type="checkbox" id="fofa-full" class="modern-checkbox" />
+                                                <span class="checkbox-custom"></span>
+                                                <span class="checkbox-text" data-i18n="infoCollectPage.fullLabel">full</span>
+                                            </label>
+                                        </div>
+                                        <small class="form-hint info-collect-row-hint" id="info-collect-size-hint">不同数据源的单次返回上限可能不同。</small>
                                     </div>
                                 </div>
-                                <div class="form-group">
-                                    <label for="fofa-fields" data-i18n="infoCollectPage.returnFields">返回字段名（逗号分隔）</label>
+                                <div class="info-collect-fields-card form-group">
+                                    <div class="info-collect-step-title">
+                                        <span>04</span>
+                                        <label for="fofa-fields" data-i18n="infoCollectPage.returnFields">返回字段名（逗号分隔）</label>
+                                    </div>
                                     <input type="text" id="fofa-fields" value="host,ip,port,domain,title,protocol,country,province,city,server" />
-                                    <div class="info-collect-presets" aria-label="FOFA 字段模板" data-i18n="infoCollectPage.fieldsPresetsAria" data-i18n-attr="aria-label" data-i18n-skip-text="true">
-                                        <button class="preset-chip" type="button" onclick="applyFofaFieldsPreset('host,ip,port,domain')" data-i18n="infoCollectPage.minFields" data-i18n-attr="title" data-i18n-title="infoCollectPage.minFieldsTitle" title="适合快速导出目标">最小字段</button>
-                                        <button class="preset-chip" type="button" onclick="applyFofaFieldsPreset('host,title,ip,port,domain,protocol,server,icp,country,province,city')" data-i18n="infoCollectPage.webCommon" data-i18n-attr="title" data-i18n-title="infoCollectPage.webCommonTitle" title="适合浏览和筛选">Web 常用</button>
-                                        <button class="preset-chip" type="button" onclick="applyFofaFieldsPreset('host,ip,port,domain,title,protocol,country,province,city,server,as_number,as_organization,icp,header,banner')" data-i18n="infoCollectPage.intelEnhanced" data-i18n-attr="title" data-i18n-title="infoCollectPage.intelEnhancedTitle" title="更偏指纹/情报">情报增强</button>
-                                    </div>
+                                    <div class="info-collect-presets" id="info-collect-fields-presets" aria-label="字段模板"></div>
                                 </div>
                             </div>
                         </div>
@@ -3559,7 +3585,6 @@
                                         </details>
                                     </div>
                                 </div>
-
                                 <div class="settings-actions">
                                     <button class="btn-primary" onclick="applySettings()" data-require-permission="config:write" data-i18n="settings.apply.button">应用配置</button>
                                 </div>
@@ -3672,6 +3697,57 @@
                                             <label for="fofa-api-key">API Key</label>
                                             <input type="password" id="fofa-api-key" data-i18n="settingsBasic.fofaApiKeyPlaceholder" data-i18n-attr="placeholder" placeholder="输入 FOFA API Key" autocomplete="off" />
                                             <small class="form-hint" data-i18n="settingsBasic.fofaApiKeyHint">仅保存在服务器配置中（`config.yaml`）。</small>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="settings-subsection">
+                                    <h4>ZoomEye 配置</h4>
+                                    <p class="form-hint">用于信息收集页调用 ZoomEye API；也可设置环境变量 ZOOMEYE_API_KEY。</p>
+                                    <div class="settings-form">
+                                        <div class="form-group">
+                                            <label for="zoomeye-base-url">Base URL</label>
+                                            <input type="text" id="zoomeye-base-url" placeholder="https://api.zoomeye.org/v2/search（可选）" />
+                                            <small class="form-hint">留空则使用默认地址。</small>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="zoomeye-api-key">API Key</label>
+                                            <input type="password" id="zoomeye-api-key" placeholder="输入 ZoomEye API Key" autocomplete="off" />
+                                            <small class="form-hint">仅保存在服务器配置中（config.yaml）。</small>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="settings-subsection">
+                                    <h4>Quake 配置</h4>
+                                    <p class="form-hint">用于信息收集页调用 360 Quake API；也可设置环境变量 QUAKE_API_KEY。</p>
+                                    <div class="settings-form">
+                                        <div class="form-group">
+                                            <label for="quake-base-url">Base URL</label>
+                                            <input type="text" id="quake-base-url" placeholder="https://quake.360.cn/api/v3/search/quake_service（可选）" />
+                                            <small class="form-hint">留空则使用默认地址。</small>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="quake-api-key">API Token</label>
+                                            <input type="password" id="quake-api-key" placeholder="输入 Quake API Token" autocomplete="off" />
+                                            <small class="form-hint">仅保存在服务器配置中（config.yaml）。</small>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="settings-subsection">
+                                    <h4>Shodan 配置</h4>
+                                    <p class="form-hint">用于信息收集页调用 Shodan API；也可设置环境变量 SHODAN_API_KEY。</p>
+                                    <div class="settings-form">
+                                        <div class="form-group">
+                                            <label for="shodan-base-url">Base URL</label>
+                                            <input type="text" id="shodan-base-url" placeholder="https://api.shodan.io（可选）" />
+                                            <small class="form-hint">留空则使用默认地址。</small>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="shodan-api-key">API Key</label>
+                                            <input type="password" id="shodan-api-key" placeholder="输入 Shodan API Key" autocomplete="off" />
+                                            <small class="form-hint">仅保存在服务器配置中（config.yaml）。</small>
                                         </div>
                                     </div>
                                 </div>

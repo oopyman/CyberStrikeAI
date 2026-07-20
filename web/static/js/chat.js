@@ -2644,6 +2644,83 @@ function renderProcessDetails(messageId, processDetails, options) {
         return s ? ('[' + s + '] ') : '';
     }
 
+    function formatProcessDetailEinoRunRetryKind(kind) {
+        if (typeof window.formatEinoRunRetryKind === 'function') {
+            return window.formatEinoRunRetryKind(kind);
+        }
+        const key = String(kind || '').trim();
+        if (!key) return '';
+        const labels = {
+            rate_limit: '限流 / 请求过多',
+            retryable_http: '可重试 HTTP 错误',
+            upstream_server: '上游服务错误',
+            http_error: 'HTTP 错误',
+            upstream_busy: '上游繁忙',
+            network: '网络连接异常',
+            stream: '流式读取异常',
+            transient: '临时异常'
+        };
+        if (typeof window.t === 'function') {
+            const translated = window.t('chat.einoRunRetryKind_' + key);
+            if (translated && translated !== 'chat.einoRunRetryKind_' + key) return translated;
+        }
+        return labels[key] || key;
+    }
+
+    function formatProcessDetailEinoRunRetryTitle(data) {
+        if (typeof window.formatEinoRunRetryTitle === 'function') {
+            return window.formatEinoRunRetryTitle(data);
+        }
+        const d = data && typeof data === 'object' ? data : {};
+        const base = typeof window.t === 'function'
+            ? window.t('chat.einoRunRetryTitle')
+            : '🔁 临时错误重试';
+        const attempt = Number(d.attempt || 0);
+        const maxAttempts = Number(d.maxAttempts || 0);
+        if (Number.isFinite(attempt) && attempt > 0 && Number.isFinite(maxAttempts) && maxAttempts > 0) {
+            return base + '（' + attempt + '/' + maxAttempts + '）';
+        }
+        return base;
+    }
+
+    function formatProcessDetailEinoRunRetryMessage(message, data) {
+        if (typeof window.formatEinoRunRetryMessage === 'function') {
+            return window.formatEinoRunRetryMessage(message, data);
+        }
+        const d = data && typeof data === 'object' ? data : {};
+        const base = String(message || '').trim();
+        const errRaw = d.errorSummary != null && String(d.errorSummary).trim() !== ''
+            ? String(d.errorSummary).trim()
+            : (d.error != null ? String(d.error).trim() : '');
+        const lines = [];
+        if (base) lines.push(base);
+        const attempt = Number(d.attempt || 0);
+        const maxAttempts = Number(d.maxAttempts || 0);
+        const backoffSec = Number(d.backoffSec || 0);
+        const kind = formatProcessDetailEinoRunRetryKind(d.errorKind);
+        if (Number.isFinite(attempt) && attempt > 0 && Number.isFinite(maxAttempts) && maxAttempts > 0) {
+            const retryPlan = typeof window.t === 'function'
+                ? window.t('chat.einoRunRetryPlan', { attempt: attempt, maxAttempts: maxAttempts, backoffSec: Number.isFinite(backoffSec) && backoffSec > 0 ? backoffSec : '-' })
+                : ('重试进度：第 ' + attempt + '/' + maxAttempts + ' 次，等待 ' + (Number.isFinite(backoffSec) && backoffSec > 0 ? backoffSec : '-') + ' 秒');
+            if (!base || base.indexOf(String(attempt) + '/' + String(maxAttempts)) === -1) {
+                lines.push(retryPlan);
+            }
+        }
+        if (kind) {
+            const kindLabel = typeof window.t === 'function'
+                ? window.t('chat.einoRunRetryReasonKind')
+                : '原因类型';
+            lines.push(kindLabel + '：' + kind);
+        }
+        if (errRaw && (!base || base.indexOf(errRaw) === -1)) {
+            const detailLabel = typeof window.t === 'function'
+                ? window.t('chat.einoRunRetryErrorDetail')
+                : '错误详情';
+            lines.push(detailLabel + '：' + errRaw);
+        }
+        return lines.join('\n');
+    }
+
     function renderOneProcessDetail(detail) {
         const eventType = detail.eventType || '';
         const title = detail.message || '';
@@ -2745,19 +2822,8 @@ function renderProcessDetails(messageId, processDetails, options) {
                 ? window.t('chat.einoEmptyResponseContinueTitle')
                 : '🔁 自动续跑（无助手正文）';
         } else if (eventType === 'eino_run_retry') {
-            itemTitle = typeof window.t === 'function'
-                ? window.t('chat.einoRunRetryTitle')
-                : '🔁 临时错误重试';
-            const errRaw = data && data.error != null ? String(data.error).trim() : '';
-            if (errRaw) {
-                const detailLabel = typeof window.t === 'function'
-                    ? window.t('chat.einoRunRetryErrorDetail')
-                    : '错误详情';
-                if (!title || String(title).indexOf(errRaw) === -1) {
-                    const merged = title ? (String(title) + '\n' + detailLabel + '：' + errRaw) : (detailLabel + '：' + errRaw);
-                    detail.message = merged;
-                }
-            }
+            itemTitle = formatProcessDetailEinoRunRetryTitle(data);
+            detail.message = formatProcessDetailEinoRunRetryMessage(title, data);
         } else if (eventType === 'knowledge_retrieval') {
             itemTitle = '📚 ' + (typeof window.t === 'function' ? window.t('chat.knowledgeRetrieval') : '知识检索');
         } else if (eventType === 'error') {
