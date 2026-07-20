@@ -168,7 +168,7 @@ CyberStrikeAI 将规划、执行、人工监督、证据与复盘连接在同一
 - **Web 应用扫描**：sqlmap、nikto、dirb、gobuster、feroxbuster、ffuf、httpx
 - **漏洞扫描**：nuclei、wpscan、wafw00f、dalfox、xsser
 - **子域名枚举**：subfinder、amass、findomain、dnsenum、fierce
-- **网络空间搜索引擎**：fofa_search、zoomeye_search
+- **网络空间搜索引擎**：fofa_search、zoomeye_search、quake_search、shodan_search
 - **API 安全**：graphql-scanner、arjun、api-fuzzer、api-schema-analyzer
 - **容器安全**：trivy、clair、docker-bench-security、kube-bench、kube-hunter
 - **云安全**：prowler、scout-suite、cloudmapper、pacu、terrascan、checkov

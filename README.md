@@ -169,7 +169,7 @@ CyberStrikeAI ships with 100+ curated tools covering the whole kill chain:
 - **Web & App Scanners** – sqlmap, nikto, dirb, gobuster, feroxbuster, ffuf, httpx
 - **Vulnerability Scanners** – nuclei, wpscan, wafw00f, dalfox, xsser
 - **Subdomain Enumeration** – subfinder, amass, findomain, dnsenum, fierce
-- **Network Space Search Engines** – fofa_search, zoomeye_search
+- **Network Space Search Engines** – fofa_search, zoomeye_search, quake_search, shodan_search
 - **API Security** – graphql-scanner, arjun, api-fuzzer, api-schema-analyzer
 - **Container Security** – trivy, clair, docker-bench-security, kube-bench, kube-hunter
 - **Cloud Security** – prowler, scout-suite, cloudmapper, pacu, terrascan, checkov

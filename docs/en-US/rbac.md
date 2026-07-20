@@ -87,7 +87,7 @@ Permissions use `module:action`. Common actions are `read`, `write`, `delete`, a
 | Robots | `robot:read`, `robot:write` |
 | Files | `files:read`, `files:write`, `files:delete` |
 | Attack chain | `attackchain:read`, `attackchain:write` |
-| FOFA | `fofa:execute` |
+| Network-space search / Reconnaissance | `fofa:execute` |
 | OpenAPI | `openapi:read` |
 | Chat groups | `group:read`, `group:write`, `group:delete` |
 | Monitor | `monitor:read`, `monitor:write`, `monitor:delete` |
@@ -98,6 +98,7 @@ Important distinctions:
 - `agent:local-execute` is the local execution fallback and should be limited to trusted operators.
 - `mcp:execute` protects the authenticated MCP HTTP entry point.
 - `mcp:external:execute` allows Agent calls to external MCP tools and currently also requires `all` scope.
+- `fofa:execute` is kept for backward compatibility, but it now protects the Reconnaissance page for FOFA, ZoomEye, Quake, and Shodan searches.
 - `mcp:write` manages external MCP configuration; it is separate from external tool execution.
 - `robot:write` manages robot configuration and the test endpoint. Chatbot conversations use the bound user or configured service account's business permissions.
 

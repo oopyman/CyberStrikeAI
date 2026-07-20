@@ -2,7 +2,7 @@
 
 [中文](../zh-CN/asset-management.md)
 
-Asset management consolidates domains, IP addresses, ports, and services discovered through manual entry, FOFA, HTTP APIs, and Agent tasks into a maintainable baseline. It answers three questions: what assets exist, which assets have been assessed, and where risk is concentrated.
+Asset management consolidates domains, IP addresses, ports, and services discovered through manual entry, network-space search engines, HTTP APIs, and Agent tasks into a maintainable baseline. It answers three questions: what assets exist, which assets have been assessed, and where risk is concentrated.
 
 > This feature is designed for security testing and attack-surface governance. It is not a replacement for a full enterprise CMDB. Add and scan only systems you own or are explicitly authorized to test.
 
@@ -12,7 +12,7 @@ Asset management provides three main views:
 
 - **Overview**: asset totals, IPs, domains, ports, recent changes, scan coverage, and protocol distribution.
 - **Asset inventory**: identity, service details, source, tags, project ownership, responsibility and business metadata, scan history, and risk state.
-- **Reconnaissance**: search FOFA and save confirmed results individually or in batches.
+- **Reconnaissance**: search FOFA, ZoomEye, Quake, or Shodan and save confirmed results individually or in batches.
 
 Assets can launch single-target analysis or batch scans. After an Agent records findings and completes the scan callback, the inventory displays related vulnerability counts, risk level, and latest scan time.
 
@@ -95,13 +95,14 @@ Limits and behavior:
 - Bulk import requires `asset:write`. Referenced projects must also be accessible to the current user.
 - Do not remove the server-side row limit. Split larger datasets and import them during a low-traffic window.
 
-### Import from FOFA
+### Import from network-space search
 
-1. Configure the FOFA API key in the configuration file or under **System Settings → Asset Management**. You can also use the `FOFA_API_KEY` environment variable.
+1. Configure the relevant API key in the configuration file or under **System Settings → Asset Management**. Environment variables are also supported: `FOFA_API_KEY`, `ZOOMEYE_API_KEY`, `QUAKE_API_KEY`, and `SHODAN_API_KEY`.
 2. Open **Asset Management → Reconnaissance**.
-3. Enter or generate a FOFA query and confirm its scope.
-4. Run the query, select results whose ownership has been verified, and choose **Save Selected**.
-5. Review the created, updated, and skipped counts.
+3. Select the data source: FOFA, ZoomEye, Quake, or Shodan.
+4. Enter or generate a query for that source and confirm its scope.
+5. Run the query, select results whose ownership has been verified, and choose **Save Selected**.
+6. Review the created, updated, and skipped counts.
 
 Internet search results are not automatically your assets. Narrow the query with organization domains, certificates, network ranges, or product fingerprints, then verify authorization before saving results.
 
@@ -225,7 +226,7 @@ Asset batch endpoint limits:
 1. Define an explicitly authorized set of domains, IP addresses, or network ranges.
 2. Add a few critical targets manually and verify normalization and deduplication.
 3. Use tags to separate production, testing, critical-business, and internet-facing scopes.
-4. Configure FOFA, begin with narrow queries, and verify ownership.
+4. Configure one or more network-space search engines, begin with narrow queries, and verify ownership.
 5. Test scanning and vulnerability callbacks on one low-risk target.
 6. Use never-scanned and over-30-day filters to identify coverage gaps.
 7. After validating the workflow, expand gradually with small batch tasks.
