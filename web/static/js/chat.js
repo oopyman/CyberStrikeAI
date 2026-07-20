@@ -2517,6 +2517,13 @@ function renderProcessDetails(messageId, processDetails, options) {
     if (!messageElement) {
         return;
     }
+    const isLazyRequest = (processDetails === null);
+    const reasoningFromMessage = getMessageReasoningContent(messageElement);
+    const backendId = messageElement.dataset ? String(messageElement.dataset.backendMessageId || '').trim() : '';
+    if (isLazyRequest && !reasoningFromMessage && !backendId && getMcpExecutionCount(messageElement) <= 0) {
+        pruneEmptyMcpCallSection(messageElement);
+        return;
+    }
     
     // 查找或创建 MCP 区域（工具栏 + 工具列表 + 迭代时间线 分区）
     const chrome = ensureMcpCallSectionChrome(messageElement, messageId);
@@ -2569,8 +2576,7 @@ function renderProcessDetails(messageId, processDetails, options) {
     }
     
     // processDetails === null 表示“尚未加载（懒加载）”；messages.reasoningContent 可先展示
-    const isLazyNotLoaded = (processDetails === null);
-    const reasoningFromMessage = getMessageReasoningContent(messageElement);
+    const isLazyNotLoaded = isLazyRequest;
     if (isLazyNotLoaded && !reasoningFromMessage) {
         detailsContainer.dataset.lazyNotLoaded = '1';
         detailsContainer.dataset.loaded = '0';
@@ -2985,6 +2991,30 @@ function getMcpExecutionCount(messageElement) {
     return 0;
 }
 
+function getExistingMcpCallSectionChrome(messageElement) {
+    if (!messageElement) return null;
+    const mcpSection = messageElement.querySelector('.mcp-call-section');
+    if (!mcpSection) return null;
+    return {
+        mcpSection: mcpSection,
+        toolbar: mcpSection.querySelector('.mcp-call-toolbar'),
+        toolList: mcpSection.querySelector('.mcp-tool-list')
+    };
+}
+
+function pruneEmptyMcpCallSection(messageElement) {
+    const chrome = getExistingMcpCallSectionChrome(messageElement);
+    if (!chrome || !chrome.mcpSection) return;
+    const hasDetails = !!chrome.mcpSection.querySelector('.process-details-container');
+    const hasToolButtons = !!(chrome.toolList && chrome.toolList.querySelector('.mcp-detail-btn'));
+    const hasPendingTools = getPendingMcpExecutionCount(messageElement) > 0 ||
+        getPendingToolExecutionSummaryCount(messageElement) > 0 ||
+        getMcpExecutionCount(messageElement) > 0;
+    if (!hasDetails && !hasToolButtons && !hasPendingTools) {
+        chrome.mcpSection.remove();
+    }
+}
+
 function collectMcpExecutionIdsFromProcessDetails(processDetails) {
     if (!Array.isArray(processDetails)) return [];
     const seen = new Set();
@@ -3212,13 +3242,19 @@ function ensureMcpCallSectionChrome(messageElement, messageId) {
 
 function syncMcpToolsToggleButton(messageElement) {
     if (!messageElement) return;
-    const chrome = ensureMcpCallSectionChrome(messageElement, messageElement.id);
+    const count = getMcpExecutionCount(messageElement);
+    let chrome = getExistingMcpCallSectionChrome(messageElement);
+    if (!chrome || (count > 0 && (!chrome.toolbar || !chrome.toolList))) {
+        if (count <= 0) return;
+        chrome = ensureMcpCallSectionChrome(messageElement, messageElement.id);
+    }
     if (!chrome) return;
     const { toolbar, toolList } = chrome;
-    const count = getMcpExecutionCount(messageElement);
+    if (!toolbar || !toolList) return;
     let toolsToggle = toolbar.querySelector('.mcp-tools-toggle-btn');
     if (count <= 0) {
         if (toolsToggle) toolsToggle.remove();
+        pruneEmptyMcpCallSection(messageElement);
         return;
     }
     if (!toolsToggle) {
