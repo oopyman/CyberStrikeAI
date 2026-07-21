@@ -788,7 +788,7 @@ func (h *C2Handler) ListEvents(c *gin.Context) {
 		TaskID:    c.Query("task_id"),
 	}
 	if since := c.Query("since"); since != "" {
-		if t, err := time.Parse(time.RFC3339, since); err == nil {
+		if t, err := database.ParseRFC3339Time(since); err == nil {
 			filter.Since = &t
 		}
 	}
@@ -832,11 +832,17 @@ func (h *C2Handler) ListEvents(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	levelCounts, err := h.mgr().DB().CountC2EventsByLevelForAccess(filter, access)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"events":    events,
-		"total":     total,
-		"page":      page,
-		"page_size": pageSize,
+		"events":       events,
+		"total":        total,
+		"level_counts": levelCounts,
+		"page":         page,
+		"page_size":    pageSize,
 	})
 }
 
