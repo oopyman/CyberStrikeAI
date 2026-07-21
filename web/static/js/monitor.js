@@ -1281,7 +1281,6 @@ function getAssistantId() {
 // 将进度详情集成到工具调用区域（流式阶段助手消息不挂 mcp 条，结束时在此创建，避免图二整行 MCP 芯片样式）
 function integrateProgressToMCPSection(progressId, assistantMessageId, mcpExecutionIds) {
     const progressElement = document.getElementById(progressId);
-    if (!progressElement) return;
 
     // 只 flush 终态标题/正文；完成后的详情回看统一走后端分页，不再复制实时 DOM 快照。
     flushAllPendingStreamPlainUpdates();
@@ -2001,7 +2000,8 @@ function handleStreamEvent(event, progressElement, progressId,
     }
 
     const timeline = resolveStreamTimeline(progressId);
-    if (!timeline) return;
+    const canHandleWithoutTimeline = ['conversation', 'response', 'error', 'cancelled', 'done'].includes(String(event.type || ''));
+    if (!timeline && !canHandleWithoutTimeline) return;
 
     // 终态事件（error/cancelled）优先复用现有助手消息，避免重复追加相同报错
     const upsertTerminalAssistantMessage = (message, preferredMessageId = null) => {
@@ -2735,11 +2735,13 @@ function handleStreamEvent(event, progressElement, progressId,
         
         case 'cancelled':
             const taskCancelledText = typeof window.t === 'function' ? window.t('chat.taskCancelled') : '任务已取消';
-            addTimelineItem(timeline, 'cancelled', {
-                title: '⛔ ' + taskCancelledText,
-                message: event.message,
-                data: event.data
-            });
+            if (timeline) {
+                addTimelineItem(timeline, 'cancelled', {
+                    title: '⛔ ' + taskCancelledText,
+                    message: event.message,
+                    data: event.data
+                });
+            }
             const cancelTitle = document.querySelector(`#${progressId} .progress-title`);
             if (cancelTitle) {
                 cancelTitle.textContent = '⛔ ' + taskCancelledText;
@@ -2922,7 +2924,7 @@ function handleStreamEvent(event, progressElement, progressId,
             // 将 response_start/response_delta 占位固化为 planning，与后端落库一致后再快照过程详情
             if (streamState && streamState.itemId) {
                 finalizeMainResponseStreamItem(streamState, event.message, responseData);
-            } else if (bubbleText && String(bubbleText).trim() && !isEinoEmptyResponsePlaceholder(event.message)) {
+            } else if (timeline && bubbleText && String(bubbleText).trim() && !isEinoEmptyResponsePlaceholder(event.message)) {
                 addTimelineItem(timeline, 'planning', {
                     title: typeof einoMainStreamPlanningTitle === 'function'
                         ? einoMainStreamPlanningTitle(responseData)
@@ -2972,11 +2974,13 @@ function handleStreamEvent(event, progressElement, progressId,
             
         case 'error':
             // 显示错误
-            addTimelineItem(timeline, 'error', {
-                title: '❌ ' + (typeof window.t === 'function' ? window.t('chat.error') : '错误'),
-                message: event.message,
-                data: event.data
-            });
+            if (timeline) {
+                addTimelineItem(timeline, 'error', {
+                    title: '❌ ' + (typeof window.t === 'function' ? window.t('chat.error') : '错误'),
+                    message: event.message,
+                    data: event.data
+                });
+            }
             
             // 更新进度标题为错误状态
             const errorTitle = document.querySelector(`#${progressId} .progress-title`);
@@ -3799,6 +3803,11 @@ function buildToolResultSectionHtml(data, opts) {
 
 const toolCallDetailStateByItemId = new Map();
 
+function getToolCallDetailState(item) {
+    if (!item || !item.id) return {};
+    return Object.assign({}, toolCallDetailStateByItemId.get(item.id) || {});
+}
+
 function setToolCallDetailState(item, state) {
     if (!item || !item.id) return;
     toolCallDetailStateByItemId.set(item.id, Object.assign({}, state || {}));
@@ -3806,6 +3815,8 @@ function setToolCallDetailState(item, state) {
     item.classList.add('tool-call-collapsible');
     updateToolDetailToggleLabel(item);
 }
+
+window.getToolCallDetailState = getToolCallDetailState;
 
 function toolDetailToggleText(expanded) {
     if (typeof window.t === 'function') {
@@ -6577,7 +6588,9 @@ function reconcileMonitorExecutionRows(tbody, rowEntries) {
             const nextRow = createMonitorExecutionRow(entry);
             if (!nextRow) return;
             if (row && row.parentNode === tbody) {
+                const replacingCursor = row === cursor;
                 row.replaceWith(nextRow);
+                if (replacingCursor) cursor = nextRow;
             }
             row = nextRow;
             existingById.set(entry.id, row);

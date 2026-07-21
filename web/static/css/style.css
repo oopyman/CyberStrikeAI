@@ -5316,8 +5316,8 @@ html[data-theme="dark"] .login-card .login-submit:disabled {
 }
 
 #mcp-detail-modal {
-    background: rgba(3, 7, 18, 0.66);
-    backdrop-filter: blur(8px);
+    background: rgba(3, 7, 18, 0.58);
+    backdrop-filter: blur(4px);
 }
 
 #mcp-detail-modal .mcp-detail-content {
@@ -5325,20 +5325,19 @@ html[data-theme="dark"] .login-card .login-submit:disabled {
     max-width: 980px;
     max-height: min(86vh, 880px);
     margin: 6vh auto;
-    border-radius: 16px;
-    background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.98));
-    border: 1px solid rgba(148, 163, 184, 0.26);
-    box-shadow: 0 24px 70px rgba(15, 23, 42, 0.22);
+    border-radius: 12px;
+    background: #ffffff;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    box-shadow: 0 18px 48px rgba(15, 23, 42, 0.18);
 }
 
 #mcp-detail-modal .modal-header {
-    min-height: 68px;
-    padding: 18px 24px;
-    background: rgba(255, 255, 255, 0.72);
-    border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+    min-height: 64px;
+    padding: 16px 24px;
+    background: #ffffff;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.18);
     box-shadow: none;
-    backdrop-filter: blur(14px);
+    backdrop-filter: none;
 }
 
 #mcp-detail-modal .modal-header h2 {
@@ -5355,34 +5354,32 @@ html[data-theme="dark"] .login-card .login-submit:disabled {
 
 #mcp-detail-modal .modal-header h2::before {
     content: '';
-    width: 6px;
-    height: 26px;
+    width: 4px;
+    height: 22px;
     border-radius: 999px;
-    background: linear-gradient(180deg, #6366f1 0%, #38bdf8 100%);
-    box-shadow: 0 0 18px rgba(99, 102, 241, 0.38);
+    background: #64748b;
+    box-shadow: none;
     flex: 0 0 auto;
 }
 
 #mcp-detail-modal .modal-body {
     padding: 24px 26px 26px;
-    background: linear-gradient(180deg, rgba(248, 250, 252, 0.62), rgba(241, 245, 249, 0.36));
+    background: #f8fafc;
 }
 
 #mcp-detail-modal .detail-section {
     margin-bottom: 18px;
     padding: 20px 22px;
-    border-radius: 12px;
-    background: rgba(255, 255, 255, 0.8);
-    border: 1px solid rgba(148, 163, 184, 0.22);
-    box-shadow: 0 12px 34px rgba(15, 23, 42, 0.05);
+    border-radius: 10px;
+    background: #ffffff;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    box-shadow: none;
 }
 
 #mcp-detail-modal .detail-section-overview {
     padding: 14px 16px;
-    background:
-        radial-gradient(circle at top left, rgba(59, 130, 246, 0.13), transparent 42%),
-        linear-gradient(145deg, rgba(255, 255, 255, 0.92), rgba(239, 246, 255, 0.68));
-    border-color: rgba(59, 130, 246, 0.22);
+    background: #f8fafc;
+    border-color: rgba(148, 163, 184, 0.22);
 }
 
 #mcp-detail-modal .detail-section-header {
@@ -5399,8 +5396,29 @@ html[data-theme="dark"] .login-card .login-submit:disabled {
 }
 
 #mcp-detail-modal .detail-section-header .btn-ghost {
-    border-color: rgba(37, 99, 235, 0.16);
-    background: rgba(37, 99, 235, 0.06);
+    border-color: rgba(148, 163, 184, 0.24);
+    background: rgba(248, 250, 252, 0.72);
+    color: var(--text-secondary);
+    min-height: 32px;
+    padding: 5px 12px;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    line-height: 1.2;
+    box-shadow: none;
+}
+
+#mcp-detail-modal .detail-section-header .btn-ghost:hover {
+    border-color: rgba(100, 116, 139, 0.34);
+    background: #ffffff;
+    color: var(--text-primary);
+}
+
+#mcp-detail-modal .detail-section-header .btn-ghost:disabled {
+    cursor: default;
+    opacity: 1;
+    border-color: rgba(34, 197, 94, 0.24);
+    background: rgba(240, 253, 244, 0.72);
+    color: #15803d;
 }
 
 #mcp-detail-modal .detail-info-grid {
@@ -5412,9 +5430,9 @@ html[data-theme="dark"] .login-card .login-submit:disabled {
     min-width: 0;
     min-height: 58px;
     padding: 10px 12px;
-    border-radius: 9px;
-    background: rgba(15, 23, 42, 0.035);
-    border-color: rgba(148, 163, 184, 0.2);
+    border-radius: 8px;
+    background: #ffffff;
+    border-color: rgba(148, 163, 184, 0.18);
     box-shadow: none;
 }
 
@@ -5443,18 +5461,18 @@ html[data-theme="dark"] .login-card .login-submit:disabled {
 
 #mcp-detail-modal .status-chip {
     width: fit-content;
-    min-width: 88px;
-    padding: 5px 12px;
+    min-width: 76px;
+    padding: 4px 10px;
     font-size: 0.82rem;
 }
 
 #mcp-detail-modal .detail-code-card {
     padding: 0;
     overflow: hidden;
-    background: #0b1120;
-    border: 1px solid rgba(148, 163, 184, 0.18);
-    border-radius: 12px;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    background: #f8fafc;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 8px;
+    box-shadow: none;
 }
 
 #mcp-detail-modal .detail-result-tabs {
@@ -5462,17 +5480,17 @@ html[data-theme="dark"] .login-card .login-submit:disabled {
     align-items: center;
     gap: 4px;
     margin: -2px 0 12px;
-    padding: 4px;
-    border: 1px solid rgba(148, 163, 184, 0.22);
-    border-radius: 10px;
-    background: rgba(15, 23, 42, 0.045);
+    padding: 3px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 8px;
+    background: #f8fafc;
 }
 
 #mcp-detail-modal .detail-result-tab {
     min-height: 30px;
     padding: 0 12px;
     border: 0;
-    border-radius: 7px;
+    border-radius: 6px;
     background: transparent;
     color: var(--text-secondary);
     font-size: 0.82rem;
@@ -5484,7 +5502,7 @@ html[data-theme="dark"] .login-card .login-submit:disabled {
 #mcp-detail-modal .detail-result-tab.active {
     background: #ffffff;
     color: var(--text-primary);
-    box-shadow: 0 5px 14px rgba(15, 23, 42, 0.08);
+    box-shadow: none;
 }
 
 #mcp-detail-modal .detail-result-tab.disabled,
@@ -5508,7 +5526,7 @@ html[data-theme="dark"] .login-card .login-submit:disabled {
     border: 0;
     border-radius: 0;
     background: transparent;
-    color: #dbeafe;
+    color: #0f172a;
     font-size: 0.84rem;
     line-height: 1.7;
     white-space: pre-wrap;
@@ -5517,7 +5535,22 @@ html[data-theme="dark"] .login-card .login-submit:disabled {
 }
 
 #mcp-detail-modal .code-block.error {
-    color: #fecaca;
+    color: #991b1b;
+}
+
+#mcp-detail-modal .code-block::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+#mcp-detail-modal .code-block::-webkit-scrollbar-thumb {
+    background: rgba(100, 116, 139, 0.36);
+    border: 2px solid rgba(248, 250, 252, 0.9);
+    border-radius: 999px;
+}
+
+#mcp-detail-modal .code-block::-webkit-scrollbar-track {
+    background: rgba(226, 232, 240, 0.62);
 }
 
 #mcp-detail-modal .detail-success-wrapper {
@@ -34189,18 +34222,18 @@ html[data-theme="dark"] #skill-view-body {
 }
 
 html[data-theme="dark"] #mcp-detail-modal {
-    background: rgba(2, 6, 23, 0.72);
+    background: rgba(2, 6, 23, 0.62);
 }
 
 html[data-theme="dark"] #mcp-detail-modal .mcp-detail-content {
-    background: linear-gradient(180deg, #111827 0%, #0f172a 100%) !important;
-    border-color: rgba(96, 165, 250, 0.16);
-    box-shadow: 0 28px 80px rgba(0, 0, 0, 0.46);
+    background: #111827 !important;
+    border-color: rgba(148, 163, 184, 0.16);
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.34);
 }
 
 html[data-theme="dark"] #mcp-detail-modal .modal-header {
-    background: rgba(15, 23, 42, 0.78) !important;
-    border-bottom-color: rgba(148, 163, 184, 0.16) !important;
+    background: #111827 !important;
+    border-bottom-color: rgba(148, 163, 184, 0.14) !important;
 }
 
 html[data-theme="dark"] #mcp-detail-modal .modal-header h2 {
@@ -34210,26 +34243,22 @@ html[data-theme="dark"] #mcp-detail-modal .modal-header h2 {
 }
 
 html[data-theme="dark"] #mcp-detail-modal .modal-body {
-    background:
-        radial-gradient(circle at top right, rgba(37, 99, 235, 0.12), transparent 42%),
-        linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(2, 6, 23, 0.88));
+    background: #0f172a;
 }
 
 html[data-theme="dark"] #mcp-detail-modal .detail-section {
-    background: rgba(15, 23, 42, 0.72);
+    background: #111827;
     border-color: rgba(148, 163, 184, 0.14);
-    box-shadow: 0 16px 44px rgba(0, 0, 0, 0.16);
+    box-shadow: none;
 }
 
 html[data-theme="dark"] #mcp-detail-modal .detail-section-overview {
-    background:
-        radial-gradient(circle at top left, rgba(59, 130, 246, 0.2), transparent 44%),
-        linear-gradient(145deg, rgba(15, 23, 42, 0.92), rgba(17, 24, 39, 0.74));
-    border-color: rgba(59, 130, 246, 0.24);
+    background: #111827;
+    border-color: rgba(148, 163, 184, 0.16);
 }
 
 html[data-theme="dark"] #mcp-detail-modal .detail-info-grid .detail-item {
-    background: rgba(2, 6, 23, 0.42);
+    background: #0f172a;
     border-color: rgba(148, 163, 184, 0.14);
 }
 
@@ -34237,14 +34266,32 @@ html[data-theme="dark"] #mcp-detail-modal .detail-item strong {
     color: #94a3b8;
 }
 
+html[data-theme="dark"] #mcp-detail-modal .detail-section-header .btn-ghost {
+    background: #0f172a;
+    border-color: rgba(148, 163, 184, 0.18);
+    color: #94a3b8;
+}
+
+html[data-theme="dark"] #mcp-detail-modal .detail-section-header .btn-ghost:hover {
+    background: #1f2937;
+    border-color: rgba(148, 163, 184, 0.26);
+    color: #e5e7eb;
+}
+
+html[data-theme="dark"] #mcp-detail-modal .detail-section-header .btn-ghost:disabled {
+    background: rgba(20, 83, 45, 0.22);
+    border-color: rgba(74, 222, 128, 0.18);
+    color: #86efac;
+}
+
 html[data-theme="dark"] #mcp-detail-modal .detail-code-card {
     background: #020617;
-    border-color: rgba(148, 163, 184, 0.16);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+    border-color: rgba(148, 163, 184, 0.14);
+    box-shadow: none;
 }
 
 html[data-theme="dark"] #mcp-detail-modal .detail-result-tabs {
-    background: rgba(2, 6, 23, 0.38);
+    background: #0f172a;
     border-color: rgba(148, 163, 184, 0.14);
 }
 
@@ -34253,9 +34300,9 @@ html[data-theme="dark"] #mcp-detail-modal .detail-result-tab {
 }
 
 html[data-theme="dark"] #mcp-detail-modal .detail-result-tab.active {
-    background: rgba(59, 130, 246, 0.16);
-    color: #dbeafe;
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.16);
+    background: #1f2937;
+    color: #e5e7eb;
+    box-shadow: none;
 }
 
 html[data-theme="dark"] #mcp-detail-modal .detail-code-card .code-block,
@@ -34263,6 +34310,19 @@ html[data-theme="dark"] #mcp-detail-modal .code-block {
     background: transparent !important;
     border-color: transparent !important;
     color: #dbeafe;
+}
+
+html[data-theme="dark"] #mcp-detail-modal .code-block.error {
+    color: #fecaca;
+}
+
+html[data-theme="dark"] #mcp-detail-modal .code-block::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.42);
+    border-color: rgba(2, 6, 23, 0.95);
+}
+
+html[data-theme="dark"] #mcp-detail-modal .code-block::-webkit-scrollbar-track {
+    background: rgba(15, 23, 42, 0.72);
 }
 
 html[data-theme="dark"] #mcp-detail-modal .detail-success-wrapper {

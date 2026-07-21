@@ -2466,6 +2466,19 @@ function isProcessDetailsUserExpanded(messageId) {
     return !!(container && container.dataset && container.dataset.userExpanded === '1');
 }
 
+function messageHasConversationContent(messageElement) {
+    if (!messageElement || !messageElement.classList || !messageElement.classList.contains('assistant')) return false;
+    if (messageElement.hasAttribute('data-system-ready-message')) return false;
+    if (messageElement.dataset && String(messageElement.dataset.backendMessageId || '').trim()) return true;
+    const raw = messageElement.dataset ? String(messageElement.dataset.originalContent || '').trim() : '';
+    if (raw) return true;
+    const bubble = messageElement.querySelector('.message-bubble');
+    if (!bubble) return false;
+    const clone = bubble.cloneNode(true);
+    clone.querySelectorAll('.message-copy-btn').forEach((btn) => btn.remove());
+    return String(clone.textContent || '').trim().length > 0;
+}
+
 function syncProcessDetailButtonLabels(messageId, expanded) {
     const expandT = typeof window.t === 'function' ? window.t('chat.expandDetail') : '展开详情';
     const collapseT = typeof window.t === 'function' ? window.t('tasks.collapseDetail') : '收起详情';
@@ -2522,7 +2535,8 @@ function renderProcessDetails(messageId, processDetails, options) {
     const isLazyRequest = (processDetails === null);
     const reasoningFromMessage = getMessageReasoningContent(messageElement);
     const backendId = messageElement.dataset ? String(messageElement.dataset.backendMessageId || '').trim() : '';
-    if (isLazyRequest && !reasoningFromMessage && !backendId && getMcpExecutionCount(messageElement) <= 0) {
+    const hasConversationContent = !!renderOpts.force || messageHasConversationContent(messageElement);
+    if (isLazyRequest && !reasoningFromMessage && !backendId && getMcpExecutionCount(messageElement) <= 0 && !hasConversationContent) {
         pruneEmptyMcpCallSection(messageElement);
         return;
     }
@@ -3084,11 +3098,12 @@ function pruneEmptyMcpCallSection(messageElement) {
     const chrome = getExistingMcpCallSectionChrome(messageElement);
     if (!chrome || !chrome.mcpSection) return;
     const hasDetails = !!chrome.mcpSection.querySelector('.process-details-container');
+    const hasProcessDetailButton = !!(chrome.toolbar && chrome.toolbar.querySelector('.process-detail-btn'));
     const hasToolButtons = !!(chrome.toolList && chrome.toolList.querySelector('.mcp-detail-btn'));
     const hasPendingTools = getPendingMcpExecutionCount(messageElement) > 0 ||
         getPendingToolExecutionSummaryCount(messageElement) > 0 ||
         getMcpExecutionCount(messageElement) > 0;
-    if (!hasDetails && !hasToolButtons && !hasPendingTools) {
+    if (!hasDetails && !hasProcessDetailButton && !hasToolButtons && !hasPendingTools) {
         chrome.mcpSection.remove();
     }
 }
@@ -3419,6 +3434,34 @@ async function focusToolExecutionInProcessDetails(messageElement, summary, index
     }, 2200);
 }
 
+async function findToolExecutionTimelineItem(messageElement, summary, index) {
+    const item = normalizeToolExecutionSummaryForButton(summary);
+    let detailsContainer = await ensureProcessDetailsForToolFocus(messageElement, item.processDetailId || '');
+    let timeline = detailsContainer && detailsContainer.querySelector('.progress-timeline');
+    if (!timeline) return null;
+    let target = null;
+    if (item.processDetailId) {
+        target = timeline.querySelector('[data-process-detail-id="' + cssEscapeValue(item.processDetailId) + '"]');
+    }
+    if (!target && item.toolCallId) {
+        target = timeline.querySelector('[data-tool-call-id="' + cssEscapeValue(item.toolCallId) + '"]');
+    }
+    if (!target) {
+        const toolItems = timeline.querySelectorAll('.timeline-item-tool_call');
+        target = toolItems[index] || null;
+    }
+    if (!target && item.processDetailId && messageElement.dataset && messageElement.dataset.backendMessageId && typeof window.loadProcessDetailsPaginated === 'function') {
+        await window.loadProcessDetailsPaginated(messageElement.id, messageElement.dataset.backendMessageId, {
+            autoLoadAll: false,
+            anchorId: item.processDetailId
+        });
+        detailsContainer = document.getElementById('process-details-' + messageElement.id);
+        timeline = detailsContainer && detailsContainer.querySelector('.progress-timeline');
+        target = timeline ? timeline.querySelector('[data-process-detail-id="' + cssEscapeValue(item.processDetailId) + '"]') : null;
+    }
+    return target;
+}
+
 async function resolveToolExecutionSummaryForFocus(messageElement, executionId, index) {
     const wantedExecutionId = executionId == null ? '' : String(executionId).trim();
     let summaries = getCachedToolExecutionSummaries(messageElement);
@@ -3482,6 +3525,77 @@ window.setMcpExecutionSummaryCount = setMcpExecutionSummaryCount;
 window.setPendingMcpExecutionIds = setPendingMcpExecutionIds;
 window.setPendingToolExecutionSummaries = setPendingToolExecutionSummaries;
 
+async function fetchProcessDetailDataForModal(detailId) {
+    const id = detailId != null ? String(detailId).trim() : '';
+    if (!id || typeof apiFetch !== 'function') return null;
+    const res = await apiFetch('/api/process-details/' + encodeURIComponent(id));
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) return null;
+    const detail = j && j.processDetail ? j.processDetail : null;
+    return detail && detail.data ? detail.data : null;
+}
+
+function processToolResultToMCPResult(resultData, rawText) {
+    if (!resultData) return null;
+    const isError = !!(resultData.isError || resultData.success === false);
+    let text = rawText;
+    if (text == null || String(text) === '') {
+        const noResultText = typeof window.t === 'function' ? window.t('timeline.noResult') : '无结果';
+        const result = resultData.result != null ? resultData.result : (resultData.error != null ? resultData.error : noResultText);
+        text = typeof result === 'string' ? result : JSON.stringify(result);
+    }
+    return {
+        content: [{ type: 'text', text: String(text || '') }],
+        isError: isError
+    };
+}
+
+async function showMCPDetailFromProcessToolItem(messageElement, summary, index) {
+    const target = await findToolExecutionTimelineItem(messageElement, summary, index);
+    if (!target) {
+        alert(typeof window.t === 'function'
+            ? window.t('chat.toolExecutionDetailPending')
+            : '工具执行详情尚未同步，请稍后重试。');
+        return;
+    }
+    const state = typeof window.getToolCallDetailState === 'function'
+        ? window.getToolCallDetailState(target)
+        : {};
+    let args = state.args;
+    let resultData = state.resultData;
+    let rawText = state.rawText;
+    if ((!args || Object.keys(args).length === 0) && state.processDetailId) {
+        const fullCall = await fetchProcessDetailDataForModal(state.processDetailId);
+        if (fullCall) {
+            args = typeof window.parseToolCallArgsFromData === 'function'
+                ? window.parseToolCallArgsFromData(fullCall)
+                : (fullCall.argumentsObj || {});
+        }
+    }
+    const resultDetailId = state.resultDetailId || target.dataset.toolResultDetailId || '';
+    if (!resultData && resultDetailId) {
+        resultData = await fetchProcessDetailDataForModal(resultDetailId);
+    }
+    const toolName = (summary && summary.toolName) || target.dataset.toolName || (typeof window.t === 'function' ? window.t('chat.unknownTool') : '未知工具');
+    const success = resultData ? !(resultData.isError || resultData.success === false) : target.dataset.toolSuccess !== '0';
+    const status = resultData || target.classList.contains('tool-call-completed') || target.classList.contains('tool-call-failed')
+        ? (success ? 'completed' : 'failed')
+        : 'running';
+    const exec = {
+        id: (resultData && resultData.executionId) || (summary && summary.executionId) || '',
+        toolName: toolName,
+        status: status,
+        startTime: target.dataset.createdAtIso || '',
+        arguments: args || {},
+        result: processToolResultToMCPResult(resultData, rawText),
+        error: resultData && resultData.error ? String(resultData.error) : ''
+    };
+    openAppModal('mcp-detail-modal', { focus: false });
+    deferModalContent(function () {
+        renderMCPDetailModal(exec);
+    });
+}
+
 async function openTaskToolExecutionDetail(messageElement, item, index) {
     let detailItem = item;
     if (!detailItem.executionId) {
@@ -3496,9 +3610,7 @@ async function openTaskToolExecutionDetail(messageElement, item, index) {
         await showMCPDetail(detailItem.executionId);
         return;
     }
-    alert(typeof window.t === 'function'
-        ? window.t('chat.toolExecutionDetailPending')
-        : '工具执行详情尚未同步，请稍后重试。');
+    await showMCPDetailFromProcessToolItem(messageElement, detailItem, index);
 }
 
 /**
@@ -3779,6 +3891,97 @@ function copyActiveMCPResultDetail(triggerBtn = null) {
     copyDetailBlock(activeBlock ? activeBlock.id : 'detail-response', triggerBtn);
 }
 
+function renderMCPDetailModal(exec) {
+    exec = exec || {};
+    document.getElementById('detail-tool-name').textContent = exec.toolName || (typeof window.t === 'function' ? window.t('mcpDetailModal.unknown') : 'Unknown');
+    document.getElementById('detail-execution-id').textContent = exec.id || 'N/A';
+    const statusEl = document.getElementById('detail-status');
+    const normalizedStatus = (exec.status || 'unknown').toLowerCase();
+    statusEl.textContent = getStatusText(exec.status);
+    statusEl.className = `status-chip status-${normalizedStatus}`;
+    try {
+        statusEl.dataset.detailStatus = (exec.status || '') + '';
+    } catch (e) { /* ignore */ }
+    const detailTimeLocale = (typeof window.__locale === 'string' && window.__locale.startsWith('zh')) ? 'zh-CN' : 'en-US';
+    const detailTimeEl = document.getElementById('detail-time');
+    if (detailTimeEl) {
+        detailTimeEl.textContent = exec.startTime
+            ? new Date(exec.startTime).toLocaleString(detailTimeLocale)
+            : '—';
+        try {
+            detailTimeEl.dataset.detailTimeIso = exec.startTime ? new Date(exec.startTime).toISOString() : '';
+        } catch (e) { /* ignore */ }
+    }
+
+    const requestData = {
+        tool: exec.toolName,
+        arguments: exec.arguments
+    };
+    document.getElementById('detail-request').textContent = JSON.stringify(requestData, null, 2);
+
+    const responseElement = document.getElementById('detail-response');
+    const successElement = document.getElementById('detail-success');
+    const errorSection = document.getElementById('detail-error-section');
+    const errorElement = document.getElementById('detail-error');
+
+    responseElement.className = 'code-block';
+    responseElement.textContent = '';
+    if (successElement) {
+        successElement.className = 'code-block';
+        successElement.textContent = '';
+    }
+    if (errorSection && errorElement) {
+        errorSection.style.display = 'none';
+        errorElement.textContent = '';
+    }
+    setMCPResultDetailTabs('raw', false);
+
+    if (exec.result) {
+        const agentVisibleText = truncateMCPDetailText(extractMCPResultText(exec.result), MCP_DETAIL_MAX_CHARS);
+        const emptyText = typeof window.t === 'function' ? window.t('mcpDetailModal.execSuccessNoContent') : '执行成功，未返回可展示的文本内容。';
+
+        if (exec.result.isError) {
+            responseElement.className = 'code-block error';
+            responseElement.textContent = formatMCPResultJsonForDisplay(exec.result, MCP_DETAIL_MAX_CHARS);
+            if (successElement) {
+                successElement.textContent = '';
+            }
+            setMCPResultDetailTabs('raw', false);
+            if (exec.error && errorSection && errorElement) {
+                errorSection.style.display = 'block';
+                errorElement.textContent = exec.error;
+            }
+        } else {
+            responseElement.className = 'code-block';
+            responseElement.textContent = formatMCPResultJsonForDisplay(exec.result, MCP_DETAIL_MAX_CHARS);
+            if (successElement) {
+                successElement.textContent = agentVisibleText || emptyText;
+            }
+            setMCPResultDetailTabs('success', true);
+        }
+    } else {
+        if (normalizedStatus === 'running') {
+            responseElement.textContent = typeof window.t === 'function' ? window.t('mcpDetailModal.runningNoResponseYet') : '尚无返回，工具可能仍在执行。若长时间无响应，可在下方终止本次调用。';
+        } else {
+            responseElement.textContent = typeof window.t === 'function' ? window.t('chat.noResponseData') : '暂无响应数据';
+        }
+        setMCPResultDetailTabs('raw', false);
+    }
+
+    const abortSection = document.getElementById('detail-abort-section');
+    const abortBtn = document.getElementById('detail-abort-btn');
+    if (abortSection && abortBtn) {
+        if (normalizedStatus === 'running' && exec.id) {
+            abortSection.style.display = 'block';
+            abortBtn.dataset.execId = exec.id || '';
+            abortBtn.textContent = typeof window.t === 'function' ? window.t('mcpDetailModal.abortBtn') : '终止工具';
+        } else {
+            abortSection.style.display = 'none';
+            delete abortBtn.dataset.execId;
+        }
+    }
+}
+
 async function showMCPDetail(executionId) {
     try {
         openAppModal('mcp-detail-modal', { focus: false });
@@ -3792,97 +3995,7 @@ async function showMCPDetail(executionId) {
         }
 
         deferModalContent(function () {
-            // 填充模态框内容
-            document.getElementById('detail-tool-name').textContent = exec.toolName || (typeof window.t === 'function' ? window.t('mcpDetailModal.unknown') : 'Unknown');
-            document.getElementById('detail-execution-id').textContent = exec.id || 'N/A';
-            const statusEl = document.getElementById('detail-status');
-            const normalizedStatus = (exec.status || 'unknown').toLowerCase();
-            statusEl.textContent = getStatusText(exec.status);
-            statusEl.className = `status-chip status-${normalizedStatus}`;
-            try {
-                statusEl.dataset.detailStatus = (exec.status || '') + '';
-            } catch (e) { /* ignore */ }
-            const detailTimeLocale = (typeof window.__locale === 'string' && window.__locale.startsWith('zh')) ? 'zh-CN' : 'en-US';
-            const detailTimeEl = document.getElementById('detail-time');
-            if (detailTimeEl) {
-                detailTimeEl.textContent = exec.startTime
-                    ? new Date(exec.startTime).toLocaleString(detailTimeLocale)
-                    : '—';
-                try {
-                    detailTimeEl.dataset.detailTimeIso = exec.startTime ? new Date(exec.startTime).toISOString() : '';
-                } catch (e) { /* ignore */ }
-            }
-            
-            // 请求参数
-            const requestData = {
-                tool: exec.toolName,
-                arguments: exec.arguments
-            };
-            document.getElementById('detail-request').textContent = JSON.stringify(requestData, null, 2);
-            
-            // 响应结果 + 正确信息 / 错误信息
-            const responseElement = document.getElementById('detail-response');
-            const successElement = document.getElementById('detail-success');
-            const errorSection = document.getElementById('detail-error-section');
-            const errorElement = document.getElementById('detail-error');
-
-            // 重置状态
-            responseElement.className = 'code-block';
-            responseElement.textContent = '';
-            if (successElement) {
-                successElement.className = 'code-block';
-                successElement.textContent = '';
-            }
-            if (errorSection && errorElement) {
-                errorSection.style.display = 'none';
-                errorElement.textContent = '';
-            }
-            setMCPResultDetailTabs('raw', false);
-
-            if (exec.result) {
-                const agentVisibleText = truncateMCPDetailText(extractMCPResultText(exec.result), MCP_DETAIL_MAX_CHARS);
-                const emptyText = typeof window.t === 'function' ? window.t('mcpDetailModal.execSuccessNoContent') : '执行成功，未返回可展示的文本内容。';
-
-                if (exec.result.isError) {
-                    responseElement.className = 'code-block error';
-                    responseElement.textContent = formatMCPResultJsonForDisplay(exec.result, MCP_DETAIL_MAX_CHARS);
-                    if (successElement) {
-                        successElement.textContent = '';
-                    }
-                    setMCPResultDetailTabs('raw', false);
-                    if (exec.error && errorSection && errorElement) {
-                        errorSection.style.display = 'block';
-                        errorElement.textContent = exec.error;
-                    }
-                } else {
-                    responseElement.className = 'code-block';
-                    responseElement.textContent = formatMCPResultJsonForDisplay(exec.result, MCP_DETAIL_MAX_CHARS);
-                    if (successElement) {
-                        successElement.textContent = agentVisibleText || emptyText;
-                    }
-                    setMCPResultDetailTabs('success', true);
-                }
-            } else {
-                if (normalizedStatus === 'running') {
-                    responseElement.textContent = typeof window.t === 'function' ? window.t('mcpDetailModal.runningNoResponseYet') : '尚无返回，工具可能仍在执行。若长时间无响应，可在下方终止本次调用。';
-                } else {
-                    responseElement.textContent = typeof window.t === 'function' ? window.t('chat.noResponseData') : '暂无响应数据';
-                }
-                setMCPResultDetailTabs('raw', false);
-            }
-
-            const abortSection = document.getElementById('detail-abort-section');
-            const abortBtn = document.getElementById('detail-abort-btn');
-            if (abortSection && abortBtn) {
-                if (normalizedStatus === 'running') {
-                    abortSection.style.display = 'block';
-                    abortBtn.dataset.execId = exec.id || '';
-                    abortBtn.textContent = typeof window.t === 'function' ? window.t('mcpDetailModal.abortBtn') : '终止工具';
-                } else {
-                    abortSection.style.display = 'none';
-                    delete abortBtn.dataset.execId;
-                }
-            }
+            renderMCPDetailModal(exec);
         });
     } catch (error) {
         closeMCPDetail();
