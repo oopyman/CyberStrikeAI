@@ -1387,7 +1387,9 @@ func (db *DB) AppendC2Event(e *C2Event) error {
 		return errors.New("event id is required")
 	}
 	if e.CreatedAt.IsZero() {
-		e.CreatedAt = time.Now()
+		e.CreatedAt = time.Now().UTC()
+	} else {
+		e.CreatedAt = e.CreatedAt.UTC()
 	}
 	if strings.TrimSpace(e.Level) == "" {
 		e.Level = "info"
@@ -1402,7 +1404,7 @@ func (db *DB) AppendC2Event(e *C2Event) error {
 		INSERT INTO c2_events (id, level, category, session_id, task_id, message, data_json, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`
-	_, err := db.Exec(query, e.ID, e.Level, e.Category, e.SessionID, e.TaskID, e.Message, dataJSON, e.CreatedAt)
+	_, err := db.Exec(query, e.ID, e.Level, e.Category, e.SessionID, e.TaskID, e.Message, dataJSON, formatSQLiteUTC(e.CreatedAt))
 	return err
 }
 
@@ -1437,8 +1439,8 @@ func buildC2EventsWhere(filter ListC2EventsFilter) (where string, args []interfa
 		args = append(args, filter.TaskID)
 	}
 	if filter.Since != nil {
-		conditions = append(conditions, "created_at >= ?")
-		args = append(args, *filter.Since)
+		conditions = append(conditions, sqliteEpochGE("created_at", ">="))
+		args = append(args, formatSQLiteUTC(*filter.Since))
 	}
 	return strings.Join(conditions, " AND "), args
 }
@@ -1508,6 +1510,33 @@ func (db *DB) CountC2EventsForAccess(filter ListC2EventsFilter, access RBACListA
 	var n int64
 	err := db.QueryRow(query, args...).Scan(&n)
 	return n, err
+}
+
+// CountC2EventsByLevelForAccess 与 ListC2Events 相同过滤条件下按级别统计
+func (db *DB) CountC2EventsByLevelForAccess(filter ListC2EventsFilter, access RBACListAccess) (map[string]int64, error) {
+	where, args := buildC2EventsWhereForAccess(filter, access)
+	query := `SELECT level, COUNT(*) FROM c2_events WHERE ` + where + ` GROUP BY level`
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	counts := map[string]int64{
+		"info":     0,
+		"warn":     0,
+		"critical": 0,
+	}
+	for rows.Next() {
+		var level string
+		var n int64
+		if err := rows.Scan(&level, &n); err != nil {
+			continue
+		}
+		if _, ok := counts[level]; ok {
+			counts[level] = n
+		}
+	}
+	return counts, rows.Err()
 }
 
 // ListC2Events 事件查询，按创建时间倒序
