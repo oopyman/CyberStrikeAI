@@ -44,7 +44,7 @@ func TestHistoryToMessagesNormalizesLegacyRawToolOutput(t *testing.T) {
 
 func TestHistoryToMessagesRestoresModelFacingTraceByteForByte(t *testing.T) {
 	mw := &config.MultiAgentEinoMiddlewareConfig{
-		ReductionMaxLengthForTrunc: 128,
+		ReductionMaxLengthForTrunc: 4096,
 		LatestUserMessageMaxRunes:  64,
 	}
 	userContent := strings.Repeat("model-facing-user-", 100)
@@ -63,6 +63,24 @@ func TestHistoryToMessagesRestoresModelFacingTraceByteForByte(t *testing.T) {
 	}
 	if msgs[2].Content != toolContent {
 		t.Fatal("model-facing tool content changed during restore")
+	}
+}
+
+func TestHistoryToMessagesCapsOversizedModelFacingToolTrace(t *testing.T) {
+	mw := &config.MultiAgentEinoMiddlewareConfig{ReductionMaxLengthForTrunc: 128}
+	h := []agent.ChatMessage{
+		{Role: "assistant", ModelFacingTrace: true, ToolCalls: []agent.ToolCall{{ID: "t1", Type: "function", Function: agent.FunctionCall{Name: "exec"}}}},
+		{Role: "tool", ToolCallID: "t1", ToolName: "exec", Content: strings.Repeat("model-facing-tool-", 1000), ModelFacingTrace: true},
+	}
+	msgs := historyToMessages(h, nil, mw)
+	if len(msgs) != 2 {
+		t.Fatalf("len=%d", len(msgs))
+	}
+	if len(msgs[1].Content) > 128 {
+		t.Fatalf("restored model-facing tool bytes=%d, want <=128", len(msgs[1].Content))
+	}
+	if !strings.Contains(msgs[1].Content, "legacy tool output discarded") {
+		t.Fatalf("missing cap marker: %q", msgs[1].Content)
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -315,10 +316,12 @@ func runEinoADKAgentLoop(ctx context.Context, args *einoADKRunLoopArgs, baseMsgs
 		if len(preview) > 200 {
 			preview = preview[:200] + "..."
 		}
+		backgroundRunning := isErr && isMCPBackgroundWaitResult(content)
+		displayIsErr := isErr && !backgroundRunning
 		data := map[string]interface{}{
 			"toolName":       toolName,
-			"success":        !isErr,
-			"isError":        isErr,
+			"success":        !displayIsErr,
+			"isError":        displayIsErr,
 			"result":         content,
 			"resultPreview":  preview,
 			"agentFacing":    true, // 与 reduction 后送入 ChatModel 的正文一致，供前端展示
@@ -326,6 +329,13 @@ func runEinoADKAgentLoop(ctx context.Context, args *einoADKRunLoopArgs, baseMsgs
 			"einoAgent":      agentName,
 			"einoRole":       einoRoleTag(agentName),
 			"source":         "eino",
+		}
+		if backgroundRunning {
+			data["status"] = "background_running"
+			data["modelFacingIsError"] = isErr
+			if execID := mcpExecutionIDFromWaitResult(content); execID != "" {
+				data["executionId"] = execID
+			}
 		}
 		tid := strings.TrimSpace(toolCallID)
 		if tid == "" {
@@ -347,8 +357,8 @@ func runEinoADKAgentLoop(ctx context.Context, args *einoADKRunLoopArgs, baseMsgs
 			data["toolCallId"] = tid
 			toolCallID = tid
 		}
-		recordPendingExecuteStdoutDup(toolName, content, isErr)
-		recordEinoADKFilesystemToolMonitor(ctx, args.FilesystemMonitorAgent, args.FilesystemMonitorRecord, args.MCPExecutionBinder, toolName, toolCallID, runAccumulatedMsgs, content, isErr)
+		recordPendingExecuteStdoutDup(toolName, content, displayIsErr)
+		recordEinoADKFilesystemToolMonitor(ctx, args.FilesystemMonitorAgent, args.FilesystemMonitorRecord, args.MCPExecutionBinder, toolName, toolCallID, runAccumulatedMsgs, content, displayIsErr)
 		if args.FilesystemMonitorAgent != nil && args.MCPExecutionBinder != nil {
 			if execID := args.MCPExecutionBinder.ExecutionID(toolCallID); execID != "" {
 				args.FilesystemMonitorAgent.UpdateMCPExecutionDisplayResult(execID, content)
@@ -1240,6 +1250,40 @@ func einoToolResultIsError(toolName, content string) bool {
 		return true
 	}
 	return false
+}
+
+func isMCPBackgroundWaitResult(content string) bool {
+	text := strings.ToLower(strings.TrimSpace(content))
+	if text == "" {
+		return false
+	}
+	hasExecutionID := strings.Contains(text, "execution_id:") || strings.Contains(text, `"execution_id"`)
+	hasRunningStatus := strings.Contains(text, "status: running") || strings.Contains(text, "status: queued") ||
+		strings.Contains(text, `"status": "running"`) || strings.Contains(text, `"status":"running"`) ||
+		strings.Contains(text, `"status": "queued"`) || strings.Contains(text, `"status":"queued"`)
+	hasSoftWaitSignal := strings.Contains(text, "工具已提交到后台执行") ||
+		strings.Contains(text, "本次等待已到达") ||
+		strings.Contains(text, "wait_timeout:") ||
+		strings.Contains(text, "background execution") ||
+		strings.Contains(text, "still running") ||
+		strings.Contains(text, "仍未完成")
+	return hasExecutionID && hasRunningStatus && hasSoftWaitSignal
+}
+
+func mcpExecutionIDFromWaitResult(content string) string {
+	re := regexp.MustCompile(`(?i)"?execution_id"?\s*[:=]\s*"?([0-9a-f]{8}-[0-9a-f-]{12,})"?`)
+	if m := re.FindStringSubmatch(content); len(m) > 1 {
+		return strings.TrimSpace(m[1])
+	}
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		lower := strings.ToLower(line)
+		if !strings.HasPrefix(lower, "execution_id:") {
+			continue
+		}
+		return strings.Trim(strings.TrimSpace(line[len("execution_id:"):]), `"'`)
+	}
+	return ""
 }
 
 // einoToolResultBody 去掉工具错误前缀，返回展示/持久化正文。

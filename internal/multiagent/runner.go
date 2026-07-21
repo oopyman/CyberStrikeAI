@@ -715,7 +715,7 @@ func historyToMessages(history []agent.ChatMessage, appCfg *config.Config, mwCfg
 				opts = append(opts, schema.WithToolName(tn))
 			}
 			content := h.Content
-			if !h.ModelFacingTrace {
+			if !h.ModelFacingTrace || (toolContentMax > 0 && len(content) > toolContentMax) {
 				content = normalizeRestoredToolContent(content, toolContentMax)
 			}
 			raw = append(raw, schema.ToolMessage(content, h.ToolCallID, opts...))
