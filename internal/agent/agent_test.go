@@ -3,11 +3,13 @@ package agent
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"cyberstrike-ai/internal/config"
 	"cyberstrike-ai/internal/mcp"
+	"cyberstrike-ai/internal/mcp/builtin"
 
 	"go.uber.org/zap"
 )
@@ -115,4 +117,94 @@ func TestAgentCancelRunningMCPToolsForConversation(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("conv-1 execution did not become cancelled")
+}
+
+func TestExecuteMCPToolForConversationInjectsConversationID(t *testing.T) {
+	ag := setupTestAgent(t)
+	gotArgs := make(chan map[string]interface{}, 1)
+	ag.mcpServer.RegisterTool(mcp.Tool{Name: builtin.ToolRecordVulnerability, InputSchema: map[string]interface{}{"type": "object"}}, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
+		gotArgs <- args
+		return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "ok"}}}, nil
+	})
+
+	result, err := ag.ExecuteMCPToolForConversation(context.Background(), "conv-record", builtin.ToolRecordVulnerability, map[string]interface{}{})
+	if err != nil {
+		t.Fatalf("ExecuteMCPToolForConversation: %v", err)
+	}
+	if result == nil || result.IsError {
+		t.Fatalf("expected successful result, got %#v", result)
+	}
+
+	select {
+	case args := <-gotArgs:
+		if got := args["conversation_id"]; got != "conv-record" {
+			t.Fatalf("conversation_id = %#v, want conv-record", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("tool was not called")
+	}
+}
+
+func TestExecuteMCPToolForConversationBindsExecutionConversation(t *testing.T) {
+	ag := setupTestAgent(t)
+	ag.mcpServer.ConfigureToolWaitTimeoutSeconds(1)
+	release := make(chan struct{})
+	ag.mcpServer.RegisterTool(mcp.Tool{Name: "slow-bind", InputSchema: map[string]interface{}{"type": "object"}}, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
+		select {
+		case <-release:
+			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "done"}}}, nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	})
+
+	result, err := ag.ExecuteMCPToolForConversation(context.Background(), "conv-bound", "slow-bind", nil)
+	if err != nil {
+		t.Fatalf("ExecuteMCPToolForConversation: %v", err)
+	}
+	if result == nil || !result.IsError || result.ExecutionID == "" {
+		t.Fatalf("expected bounded wait result with execution id, result=%#v", result)
+	}
+
+	exec, ok := ag.mcpServer.GetExecution(result.ExecutionID)
+	if !ok || exec == nil {
+		t.Fatalf("missing execution %q", result.ExecutionID)
+	}
+	if exec.ConversationID != "conv-bound" {
+		t.Fatalf("execution conversation = %q, want conv-bound", exec.ConversationID)
+	}
+	close(release)
+}
+
+func TestExecuteMCPToolForConversationConcurrentRecordIsolation(t *testing.T) {
+	ag := setupTestAgent(t)
+	seen := make(chan string, 2)
+	ag.mcpServer.RegisterTool(mcp.Tool{Name: builtin.ToolRecordVulnerability, InputSchema: map[string]interface{}{"type": "object"}}, func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
+		if conv, _ := args["conversation_id"].(string); conv != "" {
+			seen <- conv
+		}
+		return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "ok"}}}, nil
+	})
+
+	var wg sync.WaitGroup
+	for _, conv := range []string{"conv-a", "conv-b"} {
+		conv := conv
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := ag.ExecuteMCPToolForConversation(context.Background(), conv, builtin.ToolRecordVulnerability, map[string]interface{}{}); err != nil {
+				t.Errorf("ExecuteMCPToolForConversation %s: %v", conv, err)
+			}
+		}()
+	}
+	wg.Wait()
+	close(seen)
+
+	got := map[string]int{}
+	for conv := range seen {
+		got[conv]++
+	}
+	if got["conv-a"] != 1 || got["conv-b"] != 1 {
+		t.Fatalf("conversation ids = %#v, want one call for conv-a and conv-b", got)
+	}
 }

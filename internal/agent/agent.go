@@ -24,18 +24,17 @@ import (
 
 // Agent AI代理
 type Agent struct {
-	openAIClient          *openai.Client
-	config                *config.OpenAIConfig
-	agentConfig           *config.AgentConfig
-	mcpServer             *mcp.Server
-	externalMCPMgr        *mcp.ExternalMCPManager // 外部MCP管理器
-	logger                *zap.Logger
-	maxIterations         int
-	mu                    sync.RWMutex      // 添加互斥锁以支持并发更新
-	toolNameMapping       map[string]string // 工具名称映射：OpenAI格式 -> 原始格式（用于外部MCP工具）
-	currentConversationID string            // 当前对话ID（用于自动传递给工具）
-	promptBaseDir         string            // 解析 system_prompt_path 时相对路径的基准目录（通常为 config.yaml 所在目录）
-	toolDescriptionMode   string            // 工具描述模式: "short" | "full"，默认 short
+	openAIClient        *openai.Client
+	config              *config.OpenAIConfig
+	agentConfig         *config.AgentConfig
+	mcpServer           *mcp.Server
+	externalMCPMgr      *mcp.ExternalMCPManager // 外部MCP管理器
+	logger              *zap.Logger
+	maxIterations       int
+	mu                  sync.RWMutex      // 添加互斥锁以支持并发更新
+	toolNameMapping     map[string]string // 工具名称映射：OpenAI格式 -> 原始格式（用于外部MCP工具）
+	promptBaseDir       string            // 解析 system_prompt_path 时相对路径的基准目录（通常为 config.yaml 所在目录）
+	toolDescriptionMode string            // 工具描述模式: "short" | "full"，默认 short
 }
 
 type agentConversationIDKey struct{}
@@ -526,12 +525,6 @@ func (a *Agent) executeToolViaMCP(ctx context.Context, toolName string, args map
 	// 如果是record_vulnerability工具，自动添加conversation_id
 	if toolName == builtin.ToolRecordVulnerability {
 		conversationID := agentConversationIDFromContext(ctx)
-		if conversationID == "" {
-			a.mu.RLock()
-			conversationID = a.currentConversationID
-			a.mu.RUnlock()
-		}
-
 		if conversationID != "" {
 			args["conversation_id"] = conversationID
 			a.logger.Debug("自动添加conversation_id到record_vulnerability工具",
@@ -769,16 +762,8 @@ func (a *Agent) ToolsForRole(roleTools []string) []Tool {
 
 // ExecuteMCPToolForConversation 在指定会话上下文中执行 MCP 工具（行为与主 Agent 循环中的工具调用一致，如自动注入 conversation_id）。
 func (a *Agent) ExecuteMCPToolForConversation(ctx context.Context, conversationID, toolName string, args map[string]interface{}) (*ToolExecutionResult, error) {
-	a.mu.Lock()
-	prev := a.currentConversationID
-	a.currentConversationID = conversationID
-	a.mu.Unlock()
-	defer func() {
-		a.mu.Lock()
-		a.currentConversationID = prev
-		a.mu.Unlock()
-	}()
 	ctx = withAgentConversationID(ctx, conversationID)
+	ctx = mcp.WithMCPConversationID(ctx, conversationID)
 	return a.executeToolViaMCP(ctx, toolName, args)
 }
 
